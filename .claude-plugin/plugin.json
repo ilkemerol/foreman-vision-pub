@@ -1,0 +1,10 @@
+{
+  "name": "foreman-vision",
+  "description": "Live browser view for Claude Code: each session is a floor of a pixel-art office, each subagent a worker at a desk. Companion to foreman.",
+  "author": { "name": "İlkem Erol" },
+  "license": "MIT",
+  "homepage": "https://github.com/ilkemerol/foreman-vision-pub",
+  "repository": "https://github.com/ilkemerol/foreman-vision-pub",
+  "keywords": ["visualization", "subagents", "hooks", "pixel-art", "dashboard"],
+  "hooks": "./hook/hooks.json"
+}

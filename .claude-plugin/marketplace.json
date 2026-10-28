@@ -1,0 +1,12 @@
+{
+  "name": "foreman-vision",
+  "owner": { "name": "İlkem Erol" },
+  "description": "foreman-vision: a live pixel-art office for your Claude Code agents.",
+  "plugins": [
+    {
+      "name": "foreman-vision",
+      "source": "./",
+      "description": "Live browser view for Claude Code: each session is a floor of a pixel-art office, each subagent a worker at a desk. Companion to foreman."
+    }
+  ]
+}
