@@ -33,7 +33,8 @@ case "${1:-status}" in
     if up; then echo "$url"; exit 0; fi
     [ -f "$root/web/dist/index.html" ] || { echo "foreman-vision: UI not built - run npm run build in $root" >&2; exit 1; }
     mkdir -p "${log%/*}"
-    (cd "$root" && node src/cli.ts serve --port "$port" </dev/null >"$log" 2>&1 &)
+    # redirect the whole subshell: the backgrounded `cd && node` list waits for node, so it must not hold the caller's stdout
+    (cd "$root" && node src/cli.ts serve --port "$port" &) </dev/null >"$log" 2>&1
     for _ in $(seq 1 40); do up && { echo "$url"; exit 0; }; sleep 0.25; done
     echo "foreman-vision: did not start on port $port; log $log:" >&2; tail -n5 "$log" >&2; exit 1
     ;;
