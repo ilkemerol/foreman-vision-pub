@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SseMessage } from '../shared/types.ts';
+import { foremanVersion, gitCommit, VERSION } from './about.ts';
 import { answersOf, askOf, decision, stillOpen, type Ask } from './ask.ts';
 import type { Config } from './config.ts';
 import { createEngine, transcriptFile } from './engine.ts';
@@ -91,6 +92,7 @@ function loadMemory(state: State, path: string, now: number) {
 
 export async function serve(cfg: Config, webDir = WEB_DIR): Promise<Running> {
   const engine = createEngine(cfg);
+  const commit = gitCommit();   // once: it describes the running code, not whatever is checked out later
   const clients = new Set<ServerResponse>();
   let flushTimer: NodeJS.Timeout | undefined;
   let scanTimer: NodeJS.Timeout | undefined;
@@ -183,6 +185,12 @@ export async function serve(cfg: Config, webDir = WEB_DIR): Promise<Running> {
       const page = termPage(transcriptFile(s, id), from);
       if (from === null) page.remote = remoteLink(cfg.sessionsDir, sid);
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(page));
+      return;
+    }
+    if (pathname === '/api/about') {
+      if (req.headers['x-foreman-vision'] !== '1') { res.writeHead(403).end(); return; }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify({ version: VERSION, commit, foreman: foremanVersion(cfg.foremanSkill, cfg.pluginsFile) }));
       return;
     }
     if (pathname === '/api/foremen') {

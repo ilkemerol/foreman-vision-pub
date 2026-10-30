@@ -11,7 +11,7 @@ const en = {
   'settings.style': 'Office style',
   'settings.alerts': 'Alerts',
   'settings.sound': 'Sound',
-  'settings.soundHint': 'A short beep on a new alert',
+  'settings.soundHint': 'A short chime on a new alert',
   'settings.notify': 'Notifications',
   'settings.notifyHint': 'Desktop notification',
   'settings.allow': 'allow notifications',
@@ -138,6 +138,16 @@ const en = {
   'corner.empty': 'context —',
   'corner.pill': '▸ updating context',
   'corner.window': 'Context window',
+  'about.title': 'About',
+  'about.credits': 'Credits',
+  'about.vision': 'Shows Claude Code sessions and their sub-agents in a live pixel office.',
+  'about.foreman': 'The main session plans the work, hands it to sub-agents and verifies the result.',
+  'about.notInstalled': 'not installed',
+  'about.note': 'Not affiliated with or endorsed by Anthropic. Product names and logos on the couriers are trademarks of their owners.',
+  'about.tagline': 'Built while experimenting with AI, mostly on purpose.',
+  'about.art': 'Art',
+  'about.animations': 'Animations',
+  'about.inspiration': 'Inspiration',
 } as const;
 
 export type Key = keyof typeof en;
@@ -149,7 +159,7 @@ const tr: Record<Key, string> = {
   'settings.style': 'Ofis stili',
   'settings.alerts': 'Uyarılar',
   'settings.sound': 'Ses',
-  'settings.soundHint': 'Yeni uyarıda kısa bir bip',
+  'settings.soundHint': 'Yeni uyarıda kısa bir melodi',
   'settings.notify': 'Bildirim',
   'settings.notifyHint': 'Masaüstü bildirimi',
   'settings.allow': 'bildirim izni ver',
@@ -276,6 +286,16 @@ const tr: Record<Key, string> = {
   'corner.empty': 'context —',
   'corner.pill': '▸ context güncelleniyor',
   'corner.window': 'Context penceresi',
+  'about.title': 'Hakkında',
+  'about.credits': 'Emeği geçenler',
+  'about.vision': 'Claude Code oturumlarını ve alt ajanlarını canlı bir piksel ofiste gösterir.',
+  'about.foreman': 'Ana oturum işi planlar, alt ajanlara dağıtır ve sonucu doğrular.',
+  'about.notInstalled': 'kurulu değil',
+  'about.note': 'Anthropic ile bağlantılı değildir. Kuryelerdeki ürün adları ve logolar sahiplerinindir.',
+  'about.tagline': 'Yapay zekâyla deney yaparken yapıldı, çoğunlukla bilerek.',
+  'about.art': 'Görseller',
+  'about.animations': 'Animasyonlar',
+  'about.inspiration': 'İlham',
 };
 
 export const TEXT: { en: Record<Key, string>; tr: Record<Key, string> } = { en, tr };
@@ -302,4 +322,9 @@ export function reasonText(r: Reason): string {
 /** All of an agent's wait reasons on one line, '' when none. */
 export function whyText(a: AgentView): string {
   return a.reasons.map(reasonText).join(' · ');
+}
+
+/** foreman-vision's version line: a null commit means a plugin install, which has no git. */
+export function versionText(version: string, commit: string | null): string {
+  return `${version} (${commit ?? 'plugin'})`;
 }

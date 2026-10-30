@@ -74,6 +74,7 @@ button { font: inherit; color: inherit; }
 .hzoom button:disabled { opacity: .4; cursor: default; }
 .hright { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
 .gear { padding: 0 6px; font-size: 18px; line-height: 28px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 6px; }
+.gear .ico { display: block; margin: 5px 0; }
 .gear:hover, .gear.on { border-color: var(--line); background: var(--card-hi); }
 /* ⚙ drawer: slides in from the right over a dimmed floor, above the detail panel; it stays mounted,
    so visibility waits out the slide-out before it hides (and takes it out of the tab order) */
@@ -243,6 +244,27 @@ button { font: inherit; color: inherit; }
   .agent-body { border-right: 0; border-bottom: 1px solid var(--line); }
   .agent-term .lterm { flex: none; height: min(320px, 45vh); }
 }
+/* the ⓘ pop-up: the agent pop-up's frame, as tall as its content; product cards on the left, credits on the right */
+.agent.about { width: 760px; height: auto; max-height: calc(100vh - 32px); }
+.about .agent-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.about .agent-body { display: grid; gap: 12px; align-content: start; padding: 14px 16px; }
+.about .agent-body:last-child { border: 0; }
+.about h4 { margin-top: 0; }
+.about p { margin: 0; }
+.about .prod { display: grid; gap: 4px; padding: 10px 12px; font-size: 12.5px; color: var(--dim); border: 1px solid var(--line); border-radius: 8px; }
+.about .prod .t { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 13px; font-weight: 600; color: var(--fg); }
+.about .prod .v { margin-left: auto; font: 12px ui-monospace, Consolas, monospace; color: var(--accent); }
+.about .prod.off { opacity: .5; }
+.about .prod.off .v { color: var(--dim); }
+.about ul { display: grid; gap: 4px; margin: 0; padding: 0; font-size: 12.5px; list-style: none; }
+.about .prod a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.about .prod a:hover, .about .prod a:focus-visible { text-decoration: underline; }
+.about .prod .tag { font-size: 11.5px; font-style: italic; }
+.about li a { color: var(--accent); text-decoration: none; }
+.about li a:hover, .about li a:focus-visible { text-decoration: underline; }
+.about li span { display: inline-block; min-width: 96px; color: var(--dim); }
+.about .fine { font-size: 11px; color: var(--dim); }
+@media (max-width: 900px) { .about .agent-cols { grid-template-columns: minmax(0, 1fr); } }
 /* the read-only terminal beside the details: the hover terminal's colours, scrolling inside */
 .lterm { flex: none; display: flex; flex-direction: column; height: min(320px, 45vh); margin: 0 12px 12px; background: #0d1117;
   border: 1px solid #30363d; border-radius: 6px; font: 11px/1.5 ui-monospace, Consolas, monospace; color: #c9d1d9; }

@@ -176,7 +176,7 @@ This removes only foreman-vision's own hook entries from `settings.json`, after 
 
 `npm run fv -- <command>` works too.
 
-**In the browser,** the ⚙ button opens the settings drawer: view (Pixel office, Hybrid, Kanban), office style (Flat, Isometric), context window (200k or 1M), language, sound and notifications. Settings are saved in your browser's `localStorage`. Pick a floor in the sidebar, hover an agent for its last tools, click it for the details pop-up. In the isometric office, `−` / `+` / Reset next to the floor title change the zoom.
+**In the browser,** the ⚙ button opens the settings drawer: view (Pixel office, Hybrid, Kanban), office style (Flat, Isometric), context window (200k or 1M), language, sound and notifications. Settings are saved in your browser's `localStorage`. The ⓘ button next to it opens the About pop-up: the foreman-vision and foreman versions, links and credits. Pick a floor in the sidebar, hover an agent for its last tools, click it for the details pop-up. In the isometric office, `−` / `+` / Reset next to the floor title change the zoom.
 
 **Server settings** live in `~/.claude/foreman-vision.conf` (one `key=value` per line). Command-line flags win over the file, the file wins over the defaults:
 
@@ -232,7 +232,7 @@ foreman lives in its own, separate repository: **[ilkemerol/foreman](https://git
 - The server listens on `127.0.0.1` only and rejects requests whose `Host` is not `127.0.0.1` or `localhost` (DNS-rebinding guard).
 - Nothing leaves your machine: no accounts, no telemetry, no external requests at runtime. Every asset is served locally.
 - Hook payloads contain prompts and file paths, so the hook keeps only short, trimmed fields and writes them under your Claude config folder.
-- The transcript endpoint behind the read-only terminal, the floor hide/show endpoints and the answer endpoints require a custom header that other web pages cannot send without a CORS preflight, and the server sends no CORS headers. File paths are never taken from the browser.
+- The transcript endpoint behind the read-only terminal, the floor hide/show endpoints, the answer endpoints and the About endpoint require a custom header that other web pages cannot send without a CORS preflight, and the server sends no CORS headers. File paths are never taken from the browser.
 - The terminal is strictly read-only: foreman-vision never types into an agent. The one thing it sends is your answer to the main agent's open question in a foreman session, from its pop-up, as the answer hook's decision.
 - Spool files are deleted a minute after their session ends, or after 24 hours without a change.
 

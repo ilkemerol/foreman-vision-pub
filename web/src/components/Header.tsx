@@ -6,9 +6,10 @@ import { t } from '../logic/i18n.ts';
 import type { Settings } from '../logic/settings.ts';
 import { zoomIn, zoomOut } from '../logic/zoom.ts';
 import type { Live } from '../store.ts';
+import { AboutPanel } from './AboutPanel.tsx';
 import { SettingsPanel } from './SettingsPanel.tsx';
 
-/** A thin title over the floor and its wait pill; schema warning, connection and the ⚙ drawer. */
+/** A thin title over the floor and its wait pill; schema warning, connection, the ⚙ drawer and the ⓘ pop-up. */
 export function Header({ live, floor, numbers, settings, onSave, zoom, onZoom }: {
   live: Live; floor: SessionView | null; numbers: FloorNumbers; settings: Settings; onSave: (s: Settings) => void;
   zoom: { z: number | null; auto: number } | null; onZoom: (z: number | null) => void;
@@ -16,6 +17,9 @@ export function Header({ live, floor, numbers, settings, onSave, zoom, onZoom }:
   const [open, setOpen] = useState(false);
   const gear = useRef<HTMLButtonElement>(null);
   const close = () => { setOpen(false); gear.current?.focus(); };
+  const [about, setAbout] = useState(false);
+  const info = useRef<HTMLButtonElement>(null);
+  const closeAbout = () => { setAbout(false); info.current?.focus(); };
   const snap = live.snap;
   const c = floor ? floorCounts(floor) : null;
   const state = t(live.connected ? 'header.online' : 'header.offline');
@@ -38,8 +42,16 @@ export function Header({ live, floor, numbers, settings, onSave, zoom, onZoom }:
         )}
         <span className={`conn ${live.connected ? 'ok' : 'off'}`} role="img" title={state} aria-label={`${t('header.status')}: ${state}`}>{t('header.status')}<Ekg connected={live.connected} snap={snap} /></span>
         <button ref={gear} className={`gear${open ? ' on' : ''}`} title={t('settings.title')} aria-label={t('settings.title')} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>⚙</button>
+        <button ref={info} className={`gear${about ? ' on' : ''}`} title={t('about.title')} aria-label={t('about.title')} aria-haspopup="dialog" aria-expanded={about} onClick={() => setAbout(true)}>
+          <svg className="ico" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <circle cx="9" cy="9" r="7.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="9" cy="5.7" r="1" fill="currentColor" />
+            <path d="M9 8.3v4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
       </span>
       <SettingsPanel open={open} settings={settings} onSave={onSave} onClose={close} />
+      <AboutPanel open={about} onClose={closeAbout} />
     </header>
   );
 }

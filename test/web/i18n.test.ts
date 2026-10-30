@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getLang, reasonText, t, TEXT, whyText, type Key } from '../../web/src/logic/i18n.ts';
+import { getLang, reasonText, t, TEXT, versionText, whyText, type Key } from '../../web/src/logic/i18n.ts';
 import { gaugeText } from '../../web/src/logic/corner.ts';
 import { ROOMS } from '../../web/src/logic/hybrid.ts';
 import { officeLayout } from '../../web/src/logic/layout.ts';
@@ -42,6 +42,10 @@ test('reasonText: permission is written in the language; notification and note t
 test('whyText: reasons joined with " · ", empty when none', () => {
   assert.equal(whyText(agent({ reasons: [{ kind: 'permission', tool: 'Bash', label: null }, { kind: 'note', text: 'needs-decision: x' }] })), 'permission: Bash · needs-decision: x');
   assert.equal(whyText(agent()), '');
+});
+test('versionText: the commit in brackets, plugin when there is none', () => {
+  assert.equal(versionText('0.1.0', 'abc1234'), '0.1.0 (abc1234)');
+  assert.equal(versionText('0.1.0', null), '0.1.0 (plugin)');
 });
 test('door signs: every door of the layout has a name in both languages; the layout itself carries no text', () => {
   const l = officeLayout({ w: 1114, h: 589, dpr: 1, demand: 0, sb: 0 });

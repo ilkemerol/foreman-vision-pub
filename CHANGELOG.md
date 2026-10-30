@@ -13,10 +13,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The new answer hook, `hook/fv-ask.sh`, runs on `PermissionRequest` for `AskUserQuestion`. It talks only to the local server on 127.0.0.1, needs `curl` in the hook's shell, and does nothing when the server is not running.
 - `node src/cli.ts doctor` reports `curl` and whether the answer hook is installed or comes with the plugin.
 - `node src/cli.ts simulate --scenario ask` plays a demo in which you can answer questions from the pop-up.
+- **About pop-up.** The ⓘ button in the header shows the foreman-vision version (with the commit in a clone, `plugin` in a plugin install), the foreman version or "not installed", links to both repositories and the credits.
 - Turkish UI strings for all of the above.
 
 ### Changed
 
+- The alert sound is a short two-note kalimba chime instead of the beep.
 - **Update steps.** Plugin: run `claude plugin update foreman-vision@foreman-vision`, then `/reload-plugins` or restart Claude Code. Clone: pull, then run `node src/cli.ts install` again to add the answer hook. Then restart every Claude Code session that was already running, because a running session does not pick up new hooks.
 - `node src/cli.ts install` now writes two hooks and reminds you to restart open sessions. `uninstall` removes both.
 - `node src/cli.ts serve` writes its port to `~/.claude/foreman-vision/port` for the answer hook and removes the file on exit.

@@ -11,6 +11,8 @@ export interface Config {
   sessionsDir?: string; // Claude Code's session registry (<pid>.json): the Remote Control link; none, no link
   pluginRootFile?: string; // the plugin's SessionStart hook writes its folder here (read by doctor and foreman)
   portFile?: string;    // the serving port for hook/fv-ask.sh: cli serve writes it, the hook reads it
+  foremanSkill?: string; // a cloned foreman's SKILL.md, the source of its version
+  pluginsFile?: string;  // Claude Code's plugin registry: the plugin foreman's folder; neither, foreman shows as not installed
 }
 
 /** Value of `--key value` in argv; a `--key` as the last argument is an error. */
@@ -42,6 +44,8 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env)
     sessionsDir: join(base, 'sessions'),
     pluginRootFile: join(base, 'foreman-vision', 'plugin-root'),
     portFile: join(base, 'foreman-vision', 'port'),
+    foremanSkill: join(base, 'skills', 'foreman', 'SKILL.md'),
+    pluginsFile: join(base, 'plugins', 'installed_plugins.json'),
   };
 }
 

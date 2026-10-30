@@ -25,17 +25,48 @@ export function desktopNotify(a: AlertRef, onClick: () => void) {
 }
 
 let audio: AudioContext | null = null;
+let room: GainNode | null = null;
 
+/** The dry path plus a short noise tail, the small room around the notes. */
+function makeRoom(ctx: AudioContext) {
+  const dry = ctx.createGain();
+  const wet = ctx.createConvolver();
+  const wetGain = ctx.createGain();
+  const ir = ctx.createBuffer(2, ctx.sampleRate * 0.9, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.16));
+  }
+  wet.buffer = ir;
+  wetGain.gain.value = 0.15;
+  dry.gain.value = 0.3;
+  dry.connect(ctx.destination);
+  dry.connect(wet).connect(wetGain).connect(ctx.destination);
+  return dry;
+}
+
+function partial(ctx: AudioContext, out: AudioNode, t: number, freq: number, peak: number, attack: number, decay: number) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  o.connect(g).connect(out);
+  o.start(t);
+  o.stop(t + attack + decay + 0.02);
+}
+
+/** Two kalimba notes, each a soft tone plus a brief metallic pluck. */
 export function beep() {
   try {
     audio ??= new AudioContext();
+    room ??= makeRoom(audio);
     void audio.resume(); // created before a user gesture it starts suspended
-    const o = audio.createOscillator();
-    const g = audio.createGain();
-    o.frequency.value = 880;
-    g.gain.value = 0.05;
-    o.connect(g).connect(audio.destination);
-    o.start();
-    o.stop(audio.currentTime + 0.15);
+    const t = audio.currentTime + 0.01;
+    for (const [f, at] of [[523.25, 0], [783.99, 0.11]]) {
+      partial(audio, room, t + at, f, 0.65, 0.003, 0.75);
+      partial(audio, room, t + at, f * 6.27, 0.07, 0.002, 0.05);
+    }
   } catch { /* no audio available: stay silent */ }
 }
