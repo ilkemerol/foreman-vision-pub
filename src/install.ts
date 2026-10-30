@@ -115,7 +115,7 @@ export function doctor(cfg: Config): string {
       : `hook entries: ${installed}/${EVENTS.length} events (${cfg.settingsPath})`,
     `answer hook (PermissionRequest · AskUserQuestion): ${ask ? 'installed' : on ? 'from the plugin' : `MISSING — ${NO_ANSWER}`}`,
     ...(on && installed > 0 ? ['WARNING: the plugin and the settings.json hook entries are both active, so every event is spooled twice. ' +
-      'Keep one: node src/cli.ts uninstall, or claude plugin uninstall foreman-vision@foreman-vision'] : []),
+      `Keep one: node src/cli.ts uninstall, or claude plugin uninstall ${plugin?.[0]}`] : []),
     `spool: ${cfg.spoolDir} (${spool} session files)`,
   ].join('\n');
 }

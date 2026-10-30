@@ -40,7 +40,9 @@ test('foremanVersion: the plugin\'s folder from the registry; a clone wins; a br
   assert.equal(foremanVersion(missing, pluginsFile), '2.0.0');
   writeFileSync(clone, skill(['metadata:', '  version: "1.0.0"']));
   assert.equal(foremanVersion(clone, pluginsFile), '1.0.0');
-  writeFileSync(pluginsFile, JSON.stringify({ version: 2, plugins: { 'other@other': [{ installPath: plugin }] } }));
+  writeFileSync(pluginsFile, JSON.stringify({ version: 2, plugins: { 'foreman@claude-community': [{ installPath: plugin }] } }));
+  assert.equal(foremanVersion(missing, pluginsFile), '2.0.0');
+  writeFileSync(pluginsFile, JSON.stringify({ version: 2, plugins: { 'foreman-vision@foreman-vision': [{ installPath: plugin }], 'other@other': [{ installPath: plugin }] } }));
   assert.equal(foremanVersion(missing, pluginsFile), null);
   writeFileSync(pluginsFile, 'not json');
   assert.equal(foremanVersion(missing, pluginsFile), null);

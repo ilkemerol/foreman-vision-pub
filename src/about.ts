@@ -18,7 +18,8 @@ export function foremanVersion(skillFile: string | undefined, pluginsFile?: stri
   try { if (skillFile) return skillVersion(readFileSync(skillFile, 'utf8')); } catch { /* no clone: try the plugin */ }
   try {
     // shortcut: reads Claude Code's undocumented registry, a new format shows foreman as not installed; replace it if foreman ever writes its own marker
-    const root = (JSON.parse(readFileSync(pluginsFile ?? '', 'utf8')) as { plugins?: Record<string, { installPath?: string }[]> }).plugins?.['foreman@foreman']?.[0]?.installPath;
+    const plugins = (JSON.parse(readFileSync(pluginsFile ?? '', 'utf8')) as { plugins?: Record<string, { installPath?: string }[]> }).plugins ?? {};
+    const root = Object.entries(plugins).find(([id]) => id.startsWith('foreman@'))?.[1][0]?.installPath;
     return root ? skillVersion(readFileSync(join(root, 'SKILL.md'), 'utf8')) : null;
   } catch { return null; }
 }
