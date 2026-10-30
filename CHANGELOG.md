@@ -27,6 +27,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - The agent pop-up's top corners are round again. The header no longer paints over them.
+- The answer form fits two questions with their descriptions without scrolling. The last Other box no longer sits half under Send.
 
 ## 2026-10-29
 

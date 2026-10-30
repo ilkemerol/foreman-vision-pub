@@ -214,8 +214,9 @@ button { font: inherit; color: inherit; }
 .agent ol li small { margin-left: auto; white-space: nowrap; color: var(--dim); }
 .agent ol .ok { color: var(--run); }
 .agent ol .bad { color: var(--fail); }
-/* main's open question under the terminal, scrolling inside once it is taller than 45 % */
-.agent .ask { flex: none; max-height: 45%; overflow: auto; margin-top: 8px; padding: 8px 10px; background: #11161d; border: 1px solid #30363d; border-radius: 6px; }
+/* main's open question under the terminal, scrolling inside once it is taller than 70 %
+   (45 % left 250 px, short of two questions with their descriptions; the terminal keeps the rest, ~8 lines at least) */
+.agent .ask { flex: none; max-height: 70%; overflow: auto; margin-top: 8px; padding: 8px 10px; background: #11161d; border: 1px solid #30363d; border-radius: 6px; }
 .agent .ask .q { margin-bottom: 6px; color: var(--wait); }
 .agent .ask .q .h { margin-right: 6px; padding: 1px 6px; font-size: 10px; border: 1px solid var(--wait); border-radius: 9px; }
 .agent .ask .q small { color: var(--dim); }
