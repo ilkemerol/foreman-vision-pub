@@ -5,22 +5,22 @@ import { readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers.ts';
-import { addHooks, EVENTS, hookBash, type Settings } from '../src/install.ts';
+import { addHooks, ASK_TIMEOUT_S, EVENTS, hookBash, type Settings } from '../src/install.ts';
 
 const ROOT = realpathSync(fileURLToPath(new URL('..', import.meta.url))).replaceAll('\\', '/').replace(/\/$/, '');
 const FV = 'bash "${CLAUDE_PLUGIN_ROOT}/hook/fv-hook.sh"';
 
-test('the plugin hooks cover the events and matchers install writes, each running fv-hook.sh with no spool arg', () => {
+test('the plugin hooks cover the events and matchers install writes, each running fv-hook.sh with no spool arg, and the answer hook with no port file arg', () => {
   const plugin: Settings = JSON.parse(readFileSync(join(ROOT, 'hook/hooks.json'), 'utf8'));
-  const installed = addHooks({}, 'x');
+  const installed = addHooks({}, 'x', 'y');
   assert.deepEqual(Object.keys(plugin.hooks!), [...EVENTS]);
   for (const ev of EVENTS) {
-    const [g, ...more] = plugin.hooks![ev];
-    assert.equal(more.length, 0, ev);
-    assert.equal(g.matcher, installed.hooks![ev][0].matcher, ev);
+    assert.deepEqual(plugin.hooks![ev].map(g => g.matcher), installed.hooks![ev].map(g => g.matcher), ev);
+    const g = plugin.hooks![ev].at(-1)!;
     assert.equal(g.hooks[0].command, FV, ev);
     assert.deepEqual(g.hooks.slice(1).map(h => h.command), ev === 'SessionStart' ? ['bash "${CLAUDE_PLUGIN_ROOT}/hook/plugin-root.sh"'] : [], ev);
   }
+  assert.deepEqual(plugin.hooks!.PermissionRequest[0].hooks, [{ type: 'command', command: 'bash "${CLAUDE_PLUGIN_ROOT}/hook/fv-ask.sh"', timeout: ASK_TIMEOUT_S }]);
   const manifest = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8'));
   assert.equal(manifest.hooks, './hook/hooks.json');
 });

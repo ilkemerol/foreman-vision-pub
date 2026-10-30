@@ -3,14 +3,16 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readd
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { HookPayload } from '../shared/types.ts';
+import type { AskQuestion, HookPayload } from '../shared/types.ts';
 import { flag, num, type Config } from './config.ts';
-import { doneScenario, fireScenario, hybridScenario, pixelScenario, type ScriptFloor } from './scenario.ts';
+import { askScenario, doneScenario, fireScenario, hybridScenario, pixelScenario, type ScriptFloor } from './scenario.ts';
 import { serve } from './server.ts';
 
 /** A spool line, a foreman board snapshot a recorded session saw (event "__board"), a board end (event "__end", as
- *  foreman-state.sh end), a main context use (event "__usage"), or a sub-agent's tokens, its context now (event "__agentOut"). */
-export type FixtureLine = { ts: number; event: string; payload: HookPayload & { text?: string; used?: number; out?: number } };
+ *  foreman-state.sh end), a main context use (event "__usage"), a sub-agent's tokens, its context now (event "__agentOut"),
+ *  or an AskUserQuestion (event "__ask", see askLine). A tool line's `input` and `output` replace the sample call and result. */
+export type FixtureLine = { ts: number; event: string; payload: HookPayload & { text?: string; used?: number; out?: number;
+  input?: Record<string, unknown>; output?: string; questions?: AskQuestion[]; terminal?: number } };
 
 const FIXTURES = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 const MAX_GAP_MS = 5000; // long idle stretches in a recording are cut to 5 s
@@ -27,6 +29,22 @@ export function sandbox(root: string, sid: string, fixturePath?: string) {
   const metas = fixturePath && join(fixturePath.replace(/\.jsonl$/, ''), 'subagents');
   if (metas && existsSync(metas)) for (const f of readdirSync(metas)) copyFileSync(join(metas, f), join(dest, f));
   return dest;
+}
+
+/** A tool call's input and its result texts as the CLI writes them, so the simulated pop-up terminal looks real. */
+function sample(tool: string, label: string): { input: object; ok: string; fail: string } {
+  const fail = `${tool} failed`;
+  switch (tool) {
+    case 'Bash': return { input: { command: label, description: 'Run ' + label },
+      ok: [...Array.from({ length: 9 }, (_, i) => `✔ test ${i + 1}`), 'ℹ tests 9', 'ℹ pass 9', 'ℹ fail 0'].join('\n'),
+      fail: 'Exit code 1\n✖ test 3 failed\nℹ fail 1' };
+    case 'Read': return { input: { file_path: label }, ok: Array.from({ length: 140 }, (_, i) => `${i + 1}\t// line ${i + 1}`).join('\n'), fail };
+    case 'Edit': return { input: { file_path: label, old_string: 'const a = 1;\nconst b = 2;\nexport { a };', new_string: 'const a = 1;\nconst b = 3;\nconst c = 4;\nexport { a, c };' },
+      ok: `The file ${label} has been updated successfully.`, fail };
+    case 'Grep': return { input: { pattern: label }, ok: 'Found 3 files\nsrc/view.ts\nsrc/server.ts\nshared/types.ts', fail };
+    case 'Glob': return { input: { pattern: label }, ok: 'src/a.ts\nsrc/b.ts\nsrc/c.ts\nsrc/d.ts', fail };
+    default: return { input: { description: label }, ok: `${tool} ✓\n${label}`.trim(), fail };
+  }
 }
 
 export function place(root: string, sid: string, line: FixtureLine, ts: number) {
@@ -59,12 +77,39 @@ export function place(root: string, sid: string, line: FixtureLine, ts: number) 
   const { agent_id: aid, tool_name: tool, tool_use_id: id, label } = line.payload;
   if (!tool || !['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].includes(line.event)) return;
   const timestamp = new Date(ts).toISOString();
+  const s = sample(tool, label ?? '');
   const rows = line.event === 'PreToolUse'
-    ? [{ type: 'assistant', timestamp, message: { content: [{ type: 'text', text: `Next: ${tool}${label ? ' ' + label : ''}` }, { type: 'tool_use', id, name: tool, input: { description: label ?? '' } }] } }]
+    ? [{ type: 'assistant', timestamp, message: { content: [{ type: 'text', text: `Next: ${tool}${label ? ' ' + label : ''}` }, { type: 'tool_use', id, name: tool, input: line.payload.input ?? s.input }] } }]
     : [{ type: 'user', timestamp, message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: line.event === 'PostToolUseFailure',
-        content: line.event === 'PostToolUse' ? `${tool} ✓\n${label ?? ''}`.trim() : `${tool} failed` }] } }];
+        content: line.payload.output ?? (line.event === 'PostToolUse' ? s.ok : s.fail) }] } }];
   const file = aid ? join(root, 'projects', sid, 'subagents', `agent-${aid}.jsonl`) : join(root, 'projects', `${sid}.jsonl`);
   appendFileSync(file, rows.map(r => JSON.stringify(r) + '\n').join(''));
+}
+
+/** The tool result Claude Code writes for an answered AskUserQuestion. */
+const answered = (a: Record<string, string>) =>
+  `Your questions have been answered: ${Object.entries(a).map(([q, v]) => `"${q}"="${v}"`).join(', ')}. You can now continue with these answers in mind.`;
+
+/** `--scenario ask`'s "__ask" line: returns the server's answer to the hook's request (200 answered from the pop-up, 204 no decision). */
+export async function askLine(root: string, sid: string, line: FixtureLine, port: number): Promise<number> {
+  const { questions = [], terminal, ...rest } = line.payload;
+  const p = { ...rest, tool_name: 'AskUserQuestion', input: { questions } };
+  const post = (a: Record<string, string>) => place(root, sid, { ...line, event: 'PostToolUse', payload: { ...p, output: answered(a) } }, Date.now());
+  for (const event of ['PreToolUse', 'PermissionRequest']) place(root, sid, { ...line, event, payload: p }, Date.now());
+  // answered in the terminal: each question takes its first option
+  const timer = terminal === undefined ? undefined
+    : setTimeout(() => post(Object.fromEntries(questions.map(q => [q.question, q.options[0].label]))), terminal);
+  // what hook/fv-ask.sh sends
+  const r = await fetch(`http://127.0.0.1:${port}/api/ask`, { method: 'POST', headers: { 'X-Foreman-Vision': '1', 'content-type': 'application/json' },
+    body: JSON.stringify({ session_id: sid, hook_event_name: 'PermissionRequest', tool_name: 'AskUserQuestion', tool_input: { questions },
+      ...(p.agent_id && { agent_id: p.agent_id }) }) });
+  if (r.status === 200) {
+    clearTimeout(timer);   // the pop-up answered: no second PostToolUse for this tool_use_id
+    const { answers } = (await r.json()).hookSpecificOutput.decision.updatedInput as { answers: Record<string, string> };
+    post(answers);
+    console.log(`question answered (${sid}):`, answers);
+  }
+  return r.status;
 }
 
 /** Serve a sandbox and replay fixtures into it in real time, one floor per fixture copy (or per scenario floor). */
@@ -93,9 +138,10 @@ export async function simulate(cfg: Config, args: string[]) {
   });
 }
 
-const SCENARIOS: Record<string, () => ScriptFloor[]> = { pixel: pixelScenario, hybrid: hybridScenario, done: doneScenario, fire: fireScenario };
+const SCENARIOS: Record<string, () => ScriptFloor[]> = { pixel: pixelScenario, hybrid: hybridScenario, done: doneScenario, fire: fireScenario, ask: askScenario };
 
-/** `--scenario <name>`: scripted floors (pixel: the office tour, hybrid: crowded floors, done: a full Done lounge, fire: the server-room fire), each line placed at (startAt + at) / speed. */
+/** `--scenario <name>`: scripted floors (pixel: the office tour, hybrid: crowded floors, done: a full Done lounge, fire: the server-room fire,
+ *  ask: answering questions from the pop-up), each line placed at (startAt + at) / speed. */
 async function playScenario(cfg: Config, name: string, speed: number) {
   const make = Object.hasOwn(SCENARIOS, name) ? SCENARIOS[name] : undefined;
   if (!make) throw new Error(`unknown scenario: ${name} (available: ${Object.keys(SCENARIOS).join(', ')})`);
@@ -111,7 +157,11 @@ async function playScenario(cfg: Config, name: string, speed: number) {
     if (f.foreman) writeFileSync(join(root, 'state', `active-${f.sid}`), 'on');
     for (const l of f.lines) {
       const line = { ts: 0, event: l.event, payload: { ...l.payload, session_id: f.sid, cwd: f.cwd } };
-      setTimeout(() => place(root, f.sid, line, Date.now() - (l.backdate ?? 0)), (f.startAt + l.at) / speed);
+      setTimeout(() => {
+        // shortcut: fetch gives up on a question unanswered for 5 min (undici's headers timeout), as Esc would; enough for a demo
+        if (l.event === '__ask') askLine(root, f.sid, line, port).catch(e => console.error(`question (${f.sid}): ${(e as Error).message}`));
+        else place(root, f.sid, line, Date.now() - (l.backdate ?? 0));
+      }, (f.startAt + l.at) / speed);
     }
   }
 }

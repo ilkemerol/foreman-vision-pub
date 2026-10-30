@@ -51,7 +51,7 @@ test('latestCalls and busyCalls: the latest call per company with its product; m
   assert.deepEqual(latestCalls([call(GM, 'search_threads', 5), call('claude_ai_Google_Calendar', 'list_events', 9), call(MS, 'get_me', 7), call('claude_ai_Notion', 'x', 99)]),
     { g: { at: 9, product: 'calendar' }, ms: { at: 7, product: 'microsoft' } });
   assert.deepEqual(latestCalls([]), {});
-  const main = agent({ id: 'main', role: 'foreman', activeTools: [{ name: 'mcp__claude_ai_Microsoft_365__outlook_send_mail', label: null }, { name: 'Bash', label: 'ls' }] });
+  const main = agent({ id: 'main', role: 'foreman', activeTools: [{ id: 'x', name: 'mcp__claude_ai_Microsoft_365__outlook_send_mail', label: null, at: 0 }, { id: 'x', name: 'Bash', label: 'ls', at: 0 }] });
   assert.deepEqual([[...busyCalls(main).calls], busyCalls(main).asking], [['ms'], false]);
   assert.deepEqual([[...busyCalls(undefined).calls], busyCalls(undefined).asking], [[], false]);
   const ask = (r: AgentView['reasons'][number]) => busyCalls(agent({ ...main, stage: 'waiting', alert: true, reasons: [r] })).asking;

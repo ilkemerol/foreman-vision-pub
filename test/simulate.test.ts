@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tempDir } from './helpers.ts';
+import { sseReader, tempDir } from './helpers.ts';
 import { DONE_STAY_MS, type Snapshot } from '../shared/types.ts';
 import { parseBoard } from '../src/board.ts';
 import { emptyState, reduce } from '../src/reducer.ts';
-import { DONE_END, DONE_N, doneScenario, CAT_ROUNDS, CAT_WORK, FIRE_AT, FIRE_B_AT, FIRE_BREAK, FIRE_REFORM, fireScenario, pixelScenario } from '../src/scenario.ts';
+import { askScenario, DONE_END, DONE_N, doneScenario, CAT_ROUNDS, CAT_WORK, FIRE_AT, FIRE_B_AT, FIRE_BREAK, FIRE_REFORM, fireScenario, pixelScenario, type ScriptFloor } from '../src/scenario.ts';
 import type { Config } from '../src/config.ts';
-import { place, sandbox, simulate } from '../src/simulate.ts';
+import { serve } from '../src/server.ts';
+import { askLine, place, sandbox, simulate } from '../src/simulate.ts';
 import { termLines } from '../src/term.ts';
 import { scanTranscript } from '../src/transcript.ts';
 import { toSnapshot } from '../src/view.ts';
@@ -74,10 +75,13 @@ test('place: tool hooks also write the call and its result to that agent\'s tran
   place(root, 'sim0-x', { ts: 1, event: 'PreToolUse', payload: p }, 42);
   place(root, 'sim0-x', { ts: 2, event: 'PostToolUseFailure', payload: p }, 43);
   place(root, 'sim0-x', { ts: 3, event: 'PreToolUse', payload: { ...p, agent_id: undefined, tool_name: 'Read', label: 'a.md' } }, 44);
+  place(root, 'sim0-x', { ts: 4, event: 'PostToolUse', payload: { ...p, agent_id: undefined, tool_name: 'Read', label: 'a.md' } }, 45);
   const lines = (f: string) => termLines(readFileSync(join(root, 'projects', f), 'utf8').trim().split('\n'));
   assert.deepEqual(lines('sim0-x/subagents/agent-a1.jsonl'), [
-    { kind: 'text', text: 'Next: Bash npm test' }, { kind: 'tool', name: 'Bash', text: 'npm test' }, { kind: 'err', text: 'Bash failed' }]);
-  assert.deepEqual(lines('sim0-x.jsonl').map(l => l.kind), ['text', 'tool']);
+    { kind: 'text', text: 'Next: Bash npm test' }, { kind: 'tool', name: 'Bash', id: 't1', text: 'npm test' },
+    { kind: 'err', id: 't1', text: 'Exit code 1\n✖ test 3 failed\nℹ fail 1' }]);
+  assert.deepEqual(lines('sim0-x.jsonl').map(l => l.kind), ['text', 'tool', 'out']);
+  assert.equal(lines('sim0-x.jsonl')[2].text.split('\n').length, 140);
 });
 
 /** Reduce the scenario the way the engine would see it, without a server: one state, a snapshot at each of `times`
@@ -260,4 +264,44 @@ test('fireScenario: F1 reaches five sub-agents at 30+ minutes at FIRE_AT, breaks
   const snaps = run(times, undefined, fireScenario());
   const counts = snaps.map((s, i) => s.sessions.map(f => hotCount(f.agents, times[i])));
   assert.deepEqual(counts, [[4, 4], [5, 4], [5, 4], [5, 5], [4, 5], [4, 5], [5, 5]]);
+});
+
+test('askScenario: F1 and F3 are foreman floors, F2 is not; F1\'s main works (a failure, two calls at once), then asks two questions, one multi-select, and waits; its sub-agent asks too; F2 and F3 are answered in the terminal', () => {
+  const [a, b, c] = askScenario();
+  assert.deepEqual([a.foreman, b.foreman, c.foreman], [true, false, true]);
+  const asks = (f: ScriptFloor) => f.lines.filter(l => l.event === '__ask').map(l => l.payload);
+  assert.deepEqual(asks(a).map(p => [p.agent_id ?? 'main', p.questions!.length, p.questions!.some(q => q.multiSelect), p.terminal ?? null]),
+    [['a-explore', 1, false, 8000], ['main', 2, true, null]]);
+  assert.deepEqual([asks(b)[0].terminal, asks(c)[0].terminal], [20_000, 15_000]);
+  assert.ok(a.lines.some(l => l.event === 'PostToolUseFailure' && l.payload.tool_name === 'Bash' && !l.payload.agent_id));
+  const [s] = run([9000], undefined, [a]);
+  assert.equal(s.sessions[0].agents.find(x => x.id === 'main')!.activeTools.length, 2);
+});
+
+const Q = { question: 'Which color?', options: [{ label: 'Blue' }, { label: 'Red' }], multiSelect: false };
+const lastOf = (f: string) => JSON.parse(readFileSync(f, 'utf8').trim().split('\n').at(-1)!);
+const lastResult = (root: string, sid: string) => lastOf(join(root, 'projects', `${sid}.jsonl`)).message.content.find((b: { type: string }) => b.type === 'tool_result').content;
+const lastSpool = (root: string, sid: string) => { const l = lastOf(join(root, 'spool', `${sid}.jsonl`)); return [l.event, l.payload.tool_name]; };
+
+test('askLine: the question waits on the server as fv-ask.sh would; the pop-up\'s answer is written back as Claude Code would; a terminal answer is a PostToolUse and no decision', { timeout: 20_000 }, async () => {
+  const root = tempDir('fv-sim-');
+  sandbox(root, 'k1');
+  writeFileSync(join(root, 'state', 'active-k1'), 'on');
+  place(root, 'k1', { ts: 0, event: 'SessionStart', payload: { session_id: 'k1' } }, Date.now());
+  const running = await serve({ port: 0, abandonMs: 600_000, spoolDir: join(root, 'spool'), stateDir: join(root, 'state'), settingsPath: join(root, 'settings.json') });
+  try {
+    const port = running.port;
+    const next = sseReader(await fetch(`http://127.0.0.1:${port}/events`));
+    const asked = askLine(root, 'k1', { ts: 0, event: '__ask', payload: { session_id: 'k1', tool_use_id: 'q1', questions: [Q] } }, port);
+    let ask;
+    while (!(ask = (await next()).sessions.find(x => x.sid === 'k1')?.ask));
+    const r = await fetch(`http://127.0.0.1:${port}/api/ask/${ask.id}`, { method: 'POST', headers: { 'X-Foreman-Vision': '1' }, body: JSON.stringify({ answers: { 'Which color?': 'Blue' } }) });
+    assert.equal(r.status, 204);
+    assert.equal(await asked, 200);
+    assert.equal(lastResult(root, 'k1'), 'Your questions have been answered: "Which color?"="Blue". You can now continue with these answers in mind.');
+    assert.deepEqual(lastSpool(root, 'k1'), ['PostToolUse', 'AskUserQuestion']);
+    assert.equal(await askLine(root, 'k1', { ts: 0, event: '__ask', payload: { session_id: 'k1', tool_use_id: 'q2', questions: [Q], terminal: 300 } }, port), 204);
+  } finally {
+    running.stop();
+  }
 });

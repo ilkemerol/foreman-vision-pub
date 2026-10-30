@@ -1,9 +1,11 @@
-import { createReadStream, mkdirSync, readFileSync, realpathSync, renameSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
-import { createServer, type ServerResponse } from 'node:http';
+import { createReadStream, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { extname, join, resolve, sep } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SseMessage } from '../shared/types.ts';
+import { answersOf, askOf, decision, stillOpen, type Ask } from './ask.ts';
 import type { Config } from './config.ts';
 import { createEngine, transcriptFile } from './engine.ts';
 import type { State } from './reducer.ts';
@@ -16,10 +18,37 @@ const TICK_MS = 5000;       // abandoned check, the sweep (an ended floor goes 6
 const PING_MS = 15_000;
 const DAY_MS = 24 * 3600_000;
 const FLOOR_API = /^\/api\/floors\/([\w-]+)\/(hide|show)$/;
+const ASK_API = /^\/api\/ask\/([\w-]+)$/;
+const HOOK_BODY_MAX = 256 * 1024;
+const POPUP_BODY_MAX = 64 * 1024;
 
 export interface Running { port: number; host: string; stop(): void }
 
+/** Main's open question: the answer hook's request held until the pop-up answers it or the question closes. */
+interface Pending extends Ask { id: string; waited: boolean; tool?: string; res: ServerResponse }
+
+/** The request body as text; null when it passes `max` bytes. */
+function readBody(req: IncomingMessage, max: number): Promise<string | null> {
+  return new Promise(ok => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => { size += c.length; if (size <= max) chunks.push(c); });
+    req.on('end', () => ok(size > max ? null : Buffer.concat(chunks).toString('utf8')));
+    req.on('error', () => ok(null));
+  });
+}
+
+const parse = (text: string | null): unknown => { try { return JSON.parse(text ?? ''); } catch { return null; } };
+
 export const WEB_DIR = fileURLToPath(new URL('../web/dist/', import.meta.url));
+
+/** Writes the answer hook's port file; the returned function removes it while it still holds this port, so the hook
+ *  never posts a question to whatever takes the port after this server stops (a newer serve's file is kept). */
+export function writePortFile(path: string, port: number): () => void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, String(port));
+  return () => { try { if (readFileSync(path, 'utf8') === String(port)) unlinkSync(path); } catch { /* already gone */ } };
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -85,6 +114,7 @@ export async function serve(cfg: Config, webDir = WEB_DIR): Promise<Running> {
   // ponytail: every update is a full snapshot (a few KB for ~20 agents); send diffs if it ever gets big
   const frame = () => {
     const data = toSnapshot(engine.state, Date.now());
+    for (const p of asks.values()) { const s = data.sessions.find(x => x.sid === p.sid); if (s) s.ask = { id: p.id, questions: p.questions }; }
     saveMemory();
     return `data: ${JSON.stringify({ type: 'snapshot', data } satisfies SseMessage)}\n\n`;
   };
@@ -97,7 +127,23 @@ export async function serve(cfg: Config, webDir = WEB_DIR): Promise<Running> {
     for (const c of clients) if (c.writableNeedDrain) behind.add(c); else c.write(text);
   };
   const changed = () => { flushTimer ??= setTimeout(flush, THROTTLE_MS); };
-  const scan = () => { scanTimer = undefined; engine.scan(Date.now()); changed(); };
+  const asks = new Map<string, Pending>();   // sid → main's open question
+  /** The hook's answer: the decision (200) or none (204, the terminal's dialog decides). Only while p is the open one. */
+  const release = (p: Pending, body: string | null) => {
+    if (asks.get(p.sid) !== p) return;
+    asks.delete(p.sid);
+    if (body === null) p.res.writeHead(204).end();
+    else p.res.writeHead(200, { 'content-type': 'application/json' }).end(body);
+    changed();
+  };
+  // a terminal answer leaves the hook's request open, so the server lets go of every question that closed
+  const scan = () => {
+    clearTimeout(scanTimer);   // the ask routes scan at once too
+    scanTimer = undefined;
+    engine.scan(Date.now());
+    for (const p of [...asks.values()]) if (!stillOpen(p, engine.state.sessions.get(p.sid))) release(p, null);
+    changed();
+  };
 
   mkdirSync(cfg.spoolDir, { recursive: true });
   engine.sweep(Date.now()); // day-old spools go before they are replayed
@@ -143,6 +189,38 @@ export async function serve(cfg: Config, webDir = WEB_DIR): Promise<Running> {
       engine.scan(Date.now()); changed();   // a foreman just switched off is off in the answer, not after the next watch event
       const sessions = [...engine.state.sessions.values()].filter(s => s.foreman !== 'off' && !s.ended).map(s => s.sid);
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ sessions }));
+      return;
+    }
+    const answer = ASK_API.exec(pathname);
+    if (pathname === '/api/ask' || answer) {
+      if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }).end(); return; }
+      if (req.headers['x-foreman-vision'] !== '1') { res.writeHead(403).end(); return; }
+      if (answer) {
+        // the pop-up's answer to an open question
+        void readBody(req, POPUP_BODY_MAX).then(text => {
+          scan();   // answered in the terminal a moment ago: closed, 404
+          const p = [...asks.values()].find(x => x.id === answer[1]);
+          if (!p) { res.writeHead(404).end(); return; }
+          const answers = answersOf(p.questions, parse(text));
+          if (!answers) { res.writeHead(400).end(); return; }
+          release(p, decision(p.input, answers));
+          res.writeHead(204).end();
+        });
+        return;
+      }
+      // hook/fv-ask.sh: main's question waits here for the pop-up; anything else gets no decision at once
+      void readBody(req, HOOK_BODY_MAX).then(text => {
+        scan();   // the hook's own PreToolUse line is in the spool by now
+        const ask = askOf(parse(text));
+        const p: Pending | null = ask && { ...ask, id: randomUUID(), waited: false, res };
+        if (!p || res.closed || !stillOpen(p, engine.state.sessions.get(p.sid))) { res.writeHead(204).end(); return; }
+        const old = asks.get(p.sid);
+        if (old) release(old, null);   // a newer question: the old hook's dialog is gone
+        asks.set(p.sid, p);
+        // Esc on the dialog kills the hook: its question closes with the connection
+        res.on('close', () => { if (asks.get(p.sid) === p) { asks.delete(p.sid); changed(); } });
+        changed();
+      });
       return;
     }
     const api = FLOOR_API.exec(pathname);

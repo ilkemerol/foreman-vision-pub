@@ -45,7 +45,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 - **Office life.** Windows follow your local time (clouds, birds, stars at night), the office dims in the evening and desk lamps come on, along with the foreman's desk lamp, a floor lamp by the waiting-room sofas and the library reading lamp. Smooth the cat wanders between rooms and naps on busy desks (click her for hearts), and every few minutes walks to her food and water bowls in the main office for a bite and a drink; a cleaning robot does its round every ten minutes.
 - **Couriers.** When the main agent calls a Microsoft 365 or Google connector tool (MCP), a courier with a matching cap brings an envelope to the foreman's desk.
 - **Coins and flames.** Busy sub-agents stack gold coins by their tokens (the context the CLI shows for them) and collect them on payday; an agent running for more than ten minutes gets a flame on its monitor.
-- **Agent details with a live terminal.** Click any agent for its type, model, parent, job, recent tools, time and tokens, plus a read-only terminal that follows its transcript as it runs.
+- **Agent details with a live terminal.** Click any agent for a pop-up with its details, its last tool call (status, time, a one-line result) and its last five calls on the left, and its terminal on the right. The terminal collapses tool results like the CLI: a click opens one, and an Edit opens as a red/green diff. In a foreman session, when the main agent asks you something (AskUserQuestion), you can answer it from the main agent's pop-up: the terminal's own dialog stays open until one of them answers. Nothing else is ever sent to an agent.
 - **Notifications.** Tab title count, favicon dot, desktop notifications and an optional sound. Clicking a notification jumps to the agent's floor and opens it.
 - **English and Turkish UI.** Pick the language in settings.
 - **Respects `prefers-reduced-motion`.** Decorative motion stops; status markers stay.
@@ -76,7 +76,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 
 <p align="center">
   <img src="docs/media/detail.png" alt="Agent details with the read-only live terminal" width="720">
-  <br/><sub>Agent details and the read-only terminal</sub>
+  <br/><sub>Agent details and the live terminal</sub>
 </p>
 
 ## Requirements
@@ -84,7 +84,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** installed and in use. foreman-vision has nothing to show without it.
 - **Node.js 22.18 or later.** The server runs its TypeScript sources directly, with no compile step.
 - **bash and [jq](https://jqlang.github.io/jq/)** in the shell Claude Code runs hooks in. On Windows that is Git Bash (shipped with Git for Windows); install jq there too.
-- **curl**, for `/foreman-vision start|stop|status`, and **git**, only to install from a clone.
+- **curl**, for `/foreman-vision start|stop|status` and for the answer hook that lets the pop-up answer the main agent's question (curl comes with Git Bash and macOS), and **git**, only to install from a clone.
 - **macOS or Windows (Git Bash).** Those are the platforms it has been used on. Linux is untested.
 - A modern desktop browser.
 
@@ -107,22 +107,24 @@ claude plugin marketplace add ilkemerol/foreman-vision-pub
 claude plugin install foreman-vision@foreman-vision
 ```
 
-Inside a session the same is `/plugin marketplace add ilkemerol/foreman-vision-pub` and `/plugin install foreman-vision@foreman-vision`. Then restart Claude Code, or run `/reload-plugins`. The hooks come with the plugin; there is nothing to merge into `settings.json`. Start the view with `/foreman-vision start`, which prints the URL; `/foreman-vision stop`, `status` and `url` do the rest. Update with `claude plugin update foreman-vision@foreman-vision`, then `/reload-plugins` or a restart. Third-party marketplaces do not update on their own by default; turn that on under `/plugin` > Marketplaces.
+Inside a session the same is `/plugin marketplace add ilkemerol/foreman-vision-pub` and `/plugin install foreman-vision@foreman-vision`. Then restart Claude Code, or run `/reload-plugins`. The hooks come with the plugin; there is nothing to merge into `settings.json`. Start the view with `/foreman-vision start`, which prints the URL; `/foreman-vision stop`, `status` and `url` do the rest. Update with `claude plugin update foreman-vision@foreman-vision`, then `/reload-plugins` or a restart. Third-party marketplaces do not update on their own by default; turn that on under `/plugin` > Marketplaces. [CHANGELOG.md](CHANGELOG.md) lists what each update brings.
 
 **From a clone.** Clone it anywhere except under `~/.claude/skills/`, where Claude Code would also load it as a plugin:
 
 ```bash
 git clone https://github.com/ilkemerol/foreman-vision-pub.git
 cd foreman-vision-pub
-node src/cli.ts install       # adds the hook to ~/.claude/settings.json (backup first)
-node src/cli.ts doctor        # checks jq, the plugin, the hook entries and the spool folder
+node src/cli.ts install       # adds the hooks to ~/.claude/settings.json (backup first)
+node src/cli.ts doctor        # checks jq, curl, the plugin, the hook entries, the answer hook and the spool folder
 node src/cli.ts serve         # http://127.0.0.1:4780/
 ```
 
 Open <http://127.0.0.1:4780/> and start (or restart) a Claude Code session. Its floor appears as soon as the first hook event arrives.
 
+Restart any Claude Code session that was already running before `install`: it does not pick up hooks added while it runs.
+
 > [!NOTE]
-> `install` writes absolute paths (the hook script in this repo, the spool folder) into `settings.json`. If you move or rename the repo folder, or change `spool-dir`, run `node src/cli.ts install` again. The plugin needs neither: its hook reads `spool-dir` from `foreman-vision.conf` itself.
+> `install` writes absolute paths (the hook scripts in this repo, the spool folder, the port file) into `settings.json`. If you move or rename the repo folder, or change `spool-dir`, run `node src/cli.ts install` again. The plugin needs neither: its hooks read `spool-dir` from `foreman-vision.conf` and find the port file themselves.
 
 ### Try it without Claude Code running
 
@@ -130,13 +132,14 @@ The simulator plays scripted sessions into a throwaway sandbox, so you can look 
 
 ```bash
 node src/cli.ts simulate --scenario pixel --port 4787
-# other scenarios: --scenario hybrid | done | fire      speed: --speed 2
+# other scenarios: --scenario hybrid | done | fire | ask      speed: --speed 2
 ```
 
 - `pixel`: floors arrive over time; agents work, wait for a permission or an answer, finish and fail.
 - `hybrid`: a large foreman floor whose stages keep moving, next to two other sessions; made for the Hybrid and Kanban views.
 - `done`: one foreman floor of twelve agents that finish one after another and fill the Done lounge.
 - `fire`: five sub-agents pass 30 minutes of work and the server room catches fire; the fire brigade puts it out.
+- `ask`: a foreman floor's main agent asks two questions and waits; answer them from its pop-up. On two other floors the questions are answered in the terminal.
 
 Every image on this page was recorded from the simulator.
 
@@ -163,11 +166,11 @@ This removes only foreman-vision's own hook entries from `settings.json`, after 
 | Command | What it does |
 |---|---|
 | `node src/cli.ts serve [--port N]` | Serves the UI and the live event stream on `127.0.0.1` (default port 4780). |
-| `node src/cli.ts simulate [--scenario pixel\|hybrid\|done\|fire] [--speed X] [--port N]` | Runs a scripted demo in a temporary sandbox. |
+| `node src/cli.ts simulate [--scenario pixel\|hybrid\|done\|fire\|ask] [--speed X] [--port N]` | Runs a scripted demo in a temporary sandbox. |
 | `node src/cli.ts simulate [x.jsonl ...] [--copies N] [--speed X] [--port N]` | Replays recorded hook sessions in a temporary sandbox, one floor per file and copy; with no file it replays `test/fixtures/*.jsonl`. |
-| `node src/cli.ts install` | Merges the hook into Claude Code's `settings.json`. Idempotent; writes a `settings.json.fv-backup-<time>` first and stops without writing if the file is not valid JSON. |
+| `node src/cli.ts install` | Merges the hooks into Claude Code's `settings.json`. Idempotent; writes a `settings.json.fv-backup-<time>` first and stops without writing if the file is not valid JSON. |
 | `node src/cli.ts uninstall` | Removes only foreman-vision's hook entries. |
-| `node src/cli.ts doctor` | Reports jq, the plugin, how many hook events are registered in `settings.json`, and the spool folder; warns when the plugin and those entries are both active. |
+| `node src/cli.ts doctor` | Reports jq, curl, the plugin, how many hook events are registered in `settings.json`, whether the answer hook is installed (or comes with the plugin), and the spool folder; warns when the plugin and those entries are both active. |
 | `/foreman-vision start\|stop\|status\|url` | Plugin only: starts or stops the server in the background, or prints its state or URL. |
 | `bash bin/fv-server.sh start\|stop\|status\|url` | The same from a shell; the plugin also puts `fv-server.sh` on the Bash tool's `PATH`. |
 
@@ -197,7 +200,7 @@ Claude Code ──hook──► fv-hook.sh ──append──► spool/<session>
                                          transcripts, sub-agent meta files, foreman board (read only)
 ```
 
-1. **Hook.** The plugin, or `install` for a clone, registers `hook/fv-hook.sh` for Claude Code's `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop`, `SubagentStart`, `SubagentStop` and `PermissionRequest` events. The hook trims each payload to the few fields the server reads, appends one short JSON line to `~/.claude/foreman-vision/spool/<session-id>.jsonl`, never prints anything and always exits 0. It does no networking, so no event is lost while the server is down.
+1. **Hook.** The plugin, or `install` for a clone, registers `hook/fv-hook.sh` for Claude Code's `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop`, `SubagentStart`, `SubagentStop` and `PermissionRequest` events. The hook trims each payload to the few fields the server reads, appends one short JSON line to `~/.claude/foreman-vision/spool/<session-id>.jsonl`, never prints anything and always exits 0. It does no networking, so no event is lost while the server is down. Both also register `hook/fv-ask.sh` for `PermissionRequest` on `AskUserQuestion` (timeout 3600 s): it hands the question to the server on 127.0.0.1 with `curl --noproxy '*'` and prints the pop-up's answer as the hook's decision, only as an allow decision rebuilt with jq; with no server or no answer it prints nothing, so the terminal decides. `serve` writes its port to `~/.claude/foreman-vision/port` for this hook and removes the file on exit.
 2. **Server.** A small `node:http` server tails the spool files, links sub-agents to the calls that spawned them by their ids (no timing guesses), reads token and context use from Claude Code's transcripts, and folds everything through a pure reducer into an in-memory snapshot. There is no database and no history: restart it and it rebuilds the state from the spool.
 3. **Browser.** The UI gets a full snapshot over Server-Sent Events, then throttled updates. All three views draw from the same store; the office is plain Canvas 2D with the text (names, balloons, signs) laid over it as DOM.
 
@@ -229,8 +232,8 @@ foreman lives in its own, separate repository: **[ilkemerol/foreman](https://git
 - The server listens on `127.0.0.1` only and rejects requests whose `Host` is not `127.0.0.1` or `localhost` (DNS-rebinding guard).
 - Nothing leaves your machine: no accounts, no telemetry, no external requests at runtime. Every asset is served locally.
 - Hook payloads contain prompts and file paths, so the hook keeps only short, trimmed fields and writes them under your Claude config folder.
-- The transcript endpoint behind the read-only terminal and the floor hide/show endpoints require a custom header that other web pages cannot send without a CORS preflight, and the server sends no CORS headers. File paths are never taken from the browser.
-- The terminal is strictly read-only: foreman-vision never types into or sends anything to an agent.
+- The transcript endpoint behind the read-only terminal, the floor hide/show endpoints and the answer endpoints require a custom header that other web pages cannot send without a CORS preflight, and the server sends no CORS headers. File paths are never taken from the browser.
+- The terminal is strictly read-only: foreman-vision never types into an agent. The one thing it sends is your answer to the main agent's open question in a foreman session, from its pop-up, as the answer hook's decision.
 - Spool files are deleted a minute after their session ends, or after 24 hours without a change.
 
 ## Limitations

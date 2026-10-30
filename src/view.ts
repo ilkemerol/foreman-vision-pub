@@ -194,7 +194,7 @@ function agentView(s: SessionFacts, a: AgentFacts, row: BoardRow | undefined): U
     stage, reasons,
     alert: (a.hook === 'waiting' && a.alert) || (boardWaiting && ALERT_NOTE.test(row.note)),
     badges, note: row?.note || null,
-    activeTools: a.activeTools.map(({ name, label }) => ({ name, label })),
+    activeTools: a.activeTools.map(t => ({ ...t })),
     recentTools: a.recentTools,
     model: a.model, tokens: a.tokens, startedAt: a.startedAt, endedAt: a.endedAt, activeSince: a.activeSince, breaks: a.breaks,
   };

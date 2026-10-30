@@ -5,9 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tempDir } from './helpers.ts';
 import { fileURLToPath } from 'node:url';
-import { addHooks, doctor, EVENTS, hookBash, hookCommand, install, removeHooks, uninstall } from '../src/install.ts';
+import { addHooks, doctor, EVENTS, hookBash, hookCommand, install, isOurs, removeHooks, uninstall } from '../src/install.ts';
 
 const CMD = 'bash "/repo/hook/fv-hook.sh" "/h/.claude/foreman-vision/spool"';
+const ASK = 'bash "/repo/hook/fv-ask.sh" "/h/.claude/foreman-vision/port"';
 const theirs = () => ({
   model: 'opus',
   hooks: {
@@ -17,7 +18,7 @@ const theirs = () => ({
 });
 
 test('addHooks: every event gets our group after the existing ones', () => {
-  const out = addHooks(theirs(), CMD);
+  const out = addHooks(theirs(), CMD, ASK);
   for (const ev of EVENTS) assert.equal(out.hooks![ev].at(-1)!.hooks[0].command, CMD, ev);
   assert.deepEqual(out.hooks!.PreToolUse[0], theirs().hooks.PreToolUse[0]);
   assert.equal(out.hooks!.PreToolUse.at(-1)!.matcher, '*');
@@ -26,15 +27,24 @@ test('addHooks: every event gets our group after the existing ones', () => {
 });
 
 test('addHooks is idempotent and replaces an old command path', () => {
-  const once = addHooks(theirs(), CMD);
-  assert.deepEqual(addHooks(once, CMD), once);
-  const moved = addHooks(once, CMD.replace('/repo/', '/new/'));
+  const once = addHooks(theirs(), CMD, ASK);
+  assert.deepEqual(addHooks(once, CMD, ASK), once);
+  const moved = addHooks(once, CMD.replace('/repo/', '/new/'), ASK);
   assert.equal(moved.hooks!.Stop.filter(g => g.hooks.some(h => h.command?.includes('fv-hook'))).length, 1);
 });
 
+test('addHooks: PermissionRequest also gets the answer hook for AskUserQuestion with a 3600 s timeout, before our spool group; removeHooks takes it off', () => {
+  const out = addHooks(theirs(), CMD, ASK);
+  assert.deepEqual(out.hooks!.PermissionRequest.at(-2), { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: ASK, timeout: 3600 }] });
+  assert.equal(out.hooks!.PermissionRequest.at(-1)!.matcher, '*');
+  assert.equal(out.hooks!.PreToolUse.filter(g => g.hooks.some(isOurs)).length, 1);
+  assert.deepEqual(removeHooks(out), theirs());
+  assert.deepEqual(addHooks(out, CMD, ASK), out);
+});
+
 test('removeHooks undoes addHooks and keeps foreign hooks in a mixed group', () => {
-  assert.deepEqual(removeHooks(addHooks(theirs(), CMD)), theirs());
-  assert.deepEqual(removeHooks(addHooks({}, CMD)), {});
+  assert.deepEqual(removeHooks(addHooks(theirs(), CMD, ASK)), theirs());
+  assert.deepEqual(removeHooks(addHooks({}, CMD, ASK)), {});
   const mixed = { hooks: { Stop: [{ hooks: [{ type: 'command', command: CMD }, { type: 'command', command: 'other' }] }] } };
   assert.deepEqual(removeHooks(mixed), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'other' }] }] } });
 });
@@ -71,9 +81,9 @@ test('install: backup then merge; second run writes nothing; uninstall restores'
   const dir = tempDir('fv-inst-');
   const path = join(dir, 'settings.json');
   writeFileSync(path, JSON.stringify(theirs(), null, 2));
-  assert.match(install(path, CMD, 1), /backup/);
+  assert.match(install(path, CMD, ASK, 1), /backup/);
   assert.ok(existsSync(`${path}.fv-backup-1`));
-  assert.equal(install(path, CMD, 2), 'no change');
+  assert.equal(install(path, CMD, ASK, 2), 'no change');
   assert.equal(existsSync(`${path}.fv-backup-2`), false);
   uninstall(path, 3);
   assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), theirs());
@@ -83,18 +93,27 @@ test('BOM is tolerated; broken JSON writes nothing, not even a backup', () => {
   const dir = tempDir('fv-inst-');
   const bom = join(dir, 'bom.json');
   writeFileSync(bom, '\uFEFF{"model":"opus"}');
-  install(bom, CMD, 1);
+  install(bom, CMD, ASK, 1);
   assert.equal(JSON.parse(readFileSync(bom, 'utf8')).model, 'opus');
   const bad = join(dir, 'settings.json');
   writeFileSync(bad, '{"hooks": ');
-  assert.throws(() => install(bad, CMD, 1), /is not JSON/);
+  assert.throws(() => install(bad, CMD, ASK, 1), /is not JSON/);
   assert.equal(readFileSync(bad, 'utf8'), '{"hooks": ');
   assert.deepEqual(readdirSync(dir).filter(f => f.startsWith('settings.json.')), []);
 });
 
+test('doctor: reports whether the answer hook (PermissionRequest · AskUserQuestion) is installed', () => {
+  const dir = tempDir('fv-doc-'), settingsPath = join(dir, 'settings.json');
+  const cfg = { port: 0, abandonMs: 1, spoolDir: join(dir, 'spool'), stateDir: dir, settingsPath, sessionsDir: dir };
+  writeFileSync(settingsPath, JSON.stringify(addHooks({}, CMD, ASK)));
+  assert.match(doctor(cfg), /^answer hook \(PermissionRequest · AskUserQuestion\): installed$/m);
+  writeFileSync(settingsPath, JSON.stringify(addHooks({}, CMD, CMD)));
+  assert.match(doctor(cfg), /^answer hook \(PermissionRequest · AskUserQuestion\): MISSING/m);
+});
+
 test('missing settings.json is created without a backup', () => {
   const path = join(tempDir('fv-inst-'), 'settings.json');
-  assert.equal(install(path, CMD, 1), 'written');
+  assert.equal(install(path, CMD, ASK, 1), 'written');
   assert.equal(JSON.parse(readFileSync(path, 'utf8')).hooks.SessionStart[0].hooks[0].command, CMD);
 });
 
@@ -103,19 +122,20 @@ test('doctor: reports the plugin and the folder it recorded, and warns when sett
   const settingsPath = join(dir, 'settings.json');
   const pluginRootFile = join(dir, 'plugin-root');
   const cfg = { port: 0, abandonMs: 1, spoolDir: join(dir, 'spool'), stateDir: dir, settingsPath, pluginRootFile };
-  const lines = () => doctor(cfg).split('\n').slice(1, -1);   // without the jq and spool lines
+  const lines = () => doctor(cfg).split('\n').slice(2, -1);   // without the jq, curl and spool lines
+  const answer = 'answer hook (PermissionRequest · AskUserQuestion): ';
   const plugin = (on: boolean, s = {}) => writeFileSync(settingsPath, JSON.stringify({ ...s, enabledPlugins: { 'other@x': true, 'foreman-vision@foreman-vision': on } }));
 
-  writeFileSync(settingsPath, JSON.stringify(addHooks({}, CMD)));
-  assert.deepEqual(lines(), ['plugin: not installed', `hook entries: 11/11 events (${settingsPath})`]);
+  writeFileSync(settingsPath, JSON.stringify(addHooks({}, CMD, ASK)));
+  assert.deepEqual(lines(), ['plugin: not installed', `hook entries: 11/11 events (${settingsPath})`, answer + 'installed']);
   plugin(true);
   assert.deepEqual(lines(), ['plugin: foreman-vision@foreman-vision enabled, folder not recorded yet (start a Claude Code session)',
-    `hook entries: none in ${settingsPath}; the plugin brings its own`]);
+    `hook entries: none in ${settingsPath}; the plugin brings its own`, answer + 'from the plugin']);
   const root = fileURLToPath(new URL('..', import.meta.url));   // has hook/fv-hook.sh
   writeFileSync(pluginRootFile, root);
   assert.equal(lines()[0], `plugin: foreman-vision@foreman-vision enabled, folder ${root.trim()}`);
-  plugin(true, addHooks({}, CMD));
-  assert.match(lines()[2], /^WARNING: the plugin and the settings.json hook entries are both active/);
-  plugin(false, addHooks({}, CMD));
-  assert.deepEqual(lines(), ['plugin: foreman-vision@foreman-vision disabled', `hook entries: 11/11 events (${settingsPath})`]);
+  plugin(true, addHooks({}, CMD, ASK));
+  assert.match(lines()[3], /^WARNING: the plugin and the settings.json hook entries are both active/);
+  plugin(false, addHooks({}, CMD, ASK));
+  assert.deepEqual(lines(), ['plugin: foreman-vision@foreman-vision disabled', `hook entries: 11/11 events (${settingsPath})`, answer + 'installed']);
 });

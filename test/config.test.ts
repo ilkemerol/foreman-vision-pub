@@ -17,6 +17,7 @@ test('CLI flag > conf file > default', () => {
     settingsPath: join(base, 'settings.json'),
     sessionsDir: join(base, 'sessions'),
     pluginRootFile: join(base, 'foreman-vision', 'plugin-root'),
+    portFile: join(base, 'foreman-vision', 'port'),
   });
   writeFileSync(join(base, 'foreman-vision.conf'), '# comment\nport = 5000\r\nabandon-minutes=2\n');
   assert.equal(loadConfig([], env).port, 5000);

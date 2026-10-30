@@ -1,34 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { request } from 'node:http';
 import { connect } from 'node:net';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { tempDir } from './helpers.ts';
-import { DONE_STAY_MS, type AgentView, type Snapshot, type SseMessage, type TermPage } from '../shared/types.ts';
-import { serve } from '../src/server.ts';
-
-function sseReader(res: Response) {
-  const reader = res.body!.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  return async (): Promise<Snapshot> => {
-    for (;;) {
-      const end = buf.indexOf('\n\n');
-      if (end >= 0) {
-        const frame = buf.slice(0, end);
-        buf = buf.slice(end + 2);
-        if (frame.startsWith('data: ')) return (JSON.parse(frame.slice(6)) as SseMessage).data;
-        continue;
-      }
-      const { value, done } = await reader.read();
-      if (done) throw new Error('SSE closed');
-      buf += dec.decode(value, { stream: true });
-    }
-  };
-}
+import { A, hookIn, input, Q, sseReader, tempDir } from './helpers.ts';
+import { DONE_STAY_MS, type AgentView, type Snapshot, type TermPage } from '../shared/types.ts';
+import { decision } from '../src/ask.ts';
+import { serve, writePortFile } from '../src/server.ts';
 
 test('SSE: snapshot on connect, update after a spool line, localhost only', { timeout: 15_000 }, async () => {
   const root = tempDir('fv-server-');
@@ -360,4 +342,146 @@ test('restart: a session whose remembered pid has no registry file ends on the f
   } finally {
     running.stop();
   }
+});
+
+/** One spool line for session `sid`, stamped now. */
+const spool = (cfg: { spoolDir: string }, sid: string, event: string, payload: object = {}) =>
+  appendFileSync(join(cfg.spoolDir, `${sid}.jsonl`), JSON.stringify({ ts: Date.now(), event, payload: { session_id: sid, ...payload } }) + '\n');
+/** What hook/fv-ask.sh sends: its answer comes once the question is answered or closed. */
+const askHook = (port: number, body: unknown, signal?: AbortSignal) =>
+  fetch(`http://127.0.0.1:${port}/api/ask`, { method: 'POST', signal, headers: { 'X-Foreman-Vision': '1', 'content-type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body) });
+/** The pop-up's answer: its status. */
+const answer = (port: number, id: string, body: unknown, header = true) =>
+  fetch(`http://127.0.0.1:${port}/api/ask/${id}`, { method: 'POST', headers: header ? { 'X-Foreman-Vision': '1' } : {}, body: JSON.stringify(body) }).then(r => r.status);
+/** Snapshots until session `sid`'s ask passes `until`; that ask. */
+async function askIn(next: () => Promise<Snapshot>, sid: string, until: (a: Snapshot['sessions'][number]['ask']) => boolean) {
+  for (;;) { const s = (await next()).sessions.find(x => x.sid === sid); if (s && until(s.ask)) return s.ask; }
+}
+/** A foreman session s1 whose main is inside AskUserQuestion q1. */
+function askSetup(root: string) {
+  const cfg = cfgIn(root);
+  mkdirSync(cfg.spoolDir, { recursive: true });
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(cfg.stateDir, 'active-s1'), 'on');
+  spool(cfg, 's1', 'SessionStart');
+  spool(cfg, 's1', 'PreToolUse', { tool_name: 'AskUserQuestion', tool_use_id: 'q1' });
+  return cfg;
+}
+
+test('ask API: main\'s open question in a foreman session waits on the hook\'s request; the pop-up\'s answer is its decision, once; the snapshot carries it meanwhile', { timeout: 30_000 }, async () => {
+  const cfg = askSetup(tempDir('fv-ask-'));
+  const running = await serve(cfg);
+  try {
+    const p = running.port;
+    const next = sseReader(await fetch(`http://127.0.0.1:${p}/events`));
+    let settled = false;
+    const hooked = askHook(p, hookIn()).finally(() => { settled = true; });
+    const ask = (await askIn(next, 's1', a => a !== undefined))!;
+    assert.deepEqual(ask.questions, Q);
+    assert.equal(settled, false);   // the hook waits
+    assert.equal(await answer(p, ask.id, { answers: A }, false), 403);
+    assert.equal(await answer(p, 'nope', { answers: A }), 404);
+    assert.equal(await answer(p, ask.id, { answers: {} }), 400);
+    assert.equal((await get(p, `/api/ask/${ask.id}`)).status, 405);
+    assert.equal(settled, false);
+    assert.equal(await answer(p, ask.id, { answers: A }), 204);
+    const r = await hooked;
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type')!, /json/);
+    assert.deepEqual(await r.json(), JSON.parse(decision(input, A)));
+    assert.equal(await answer(p, ask.id, { answers: A }), 404);   // once
+    assert.equal(await askIn(next, 's1', a => a === undefined), undefined);
+  } finally {
+    running.stop();
+  }
+});
+
+test('ask API: no decision for a foreman-off session, a sub-agent, no open AskUserQuestion or a bad body; no header, GET and a foreign Host are refused', { timeout: 30_000 }, async () => {
+  const cfg = askSetup(tempDir('fv-ask-'));   // s1: open, so only the sub-agent's agent_id stops it
+  spool(cfg, 'plain', 'SessionStart');
+  spool(cfg, 'plain', 'PreToolUse', { tool_name: 'AskUserQuestion', tool_use_id: 'p1' });
+  writeFileSync(join(cfg.stateDir, 'active-s2'), 'on');
+  spool(cfg, 's2', 'SessionStart');
+  const running = await serve(cfg);
+  try {
+    const p = running.port;
+    for (const body of [hookIn({ session_id: 'plain' }), hookIn({ agent_id: 'a1' }), hookIn({ session_id: 's2' }), '{bad']) {
+      const t = Date.now();
+      assert.equal((await askHook(p, body)).status, 204, JSON.stringify(body));
+      assert.ok(Date.now() - t < 2000, JSON.stringify(body));
+    }
+    assert.equal((await fetch(`http://127.0.0.1:${p}/api/ask`, { method: 'POST', body: JSON.stringify(hookIn()) })).status, 403);
+    assert.equal((await get(p, '/api/ask')).status, 405);
+    assert.equal((await get(p, '/api/ask', 'evil.example')).status, 403);
+  } finally {
+    running.stop();
+  }
+});
+
+test('ask API: answered in the terminal, foreman switched off, the hook gone, or a newer question closes it; no decision, the snapshot drops it', { timeout: 60_000 }, async () => {
+  const cfg = askSetup(tempDir('fv-ask-'));
+  const running = await serve(cfg);
+  try {
+    const p = running.port;
+    const next = sseReader(await fetch(`http://127.0.0.1:${p}/events`));
+    const open = () => askIn(next, 's1', a => a !== undefined).then(a => a!);
+    const gone = () => askIn(next, 's1', a => a === undefined);
+    // (a) answered in the terminal: Claude Code leaves the hook waiting, the server lets it go
+    let h = askHook(p, hookIn());
+    const id0 = (await open()).id;
+    spool(cfg, 's1', 'PostToolUse', { tool_name: 'AskUserQuestion', tool_use_id: 'q1' });
+    assert.equal(await answer(p, id0, { answers: A }), 404);   // the pop-up a moment late: closed, not a second answer
+    assert.equal((await h).status, 204);
+    await gone();
+    // (b) foreman switched off
+    spool(cfg, 's1', 'PreToolUse', { tool_name: 'AskUserQuestion', tool_use_id: 'q2' });
+    h = askHook(p, hookIn());
+    await open();
+    unlinkSync(join(cfg.stateDir, 'active-s1'));
+    assert.equal((await h).status, 204);
+    await gone();
+    // (c) the hook gone (Esc kills it)
+    writeFileSync(join(cfg.stateDir, 'active-s1'), 'on');
+    spool(cfg, 's1', 'PreToolUse', { tool_name: 'AskUserQuestion', tool_use_id: 'q3' });
+    const ac = new AbortController();
+    const dropped = askHook(p, hookIn(), ac.signal).catch(() => null);
+    const id = (await open()).id;
+    ac.abort();
+    await dropped;
+    await gone();
+    assert.equal(await answer(p, id, { answers: A }), 404);
+    // (d) a newer question
+    const first = askHook(p, hookIn());
+    const id1 = (await open()).id;
+    const second = askHook(p, hookIn());
+    assert.equal((await first).status, 204);
+    await askIn(next, 's1', a => a !== undefined && a.id !== id1);
+    // (e) Esc, then a new prompt: the wait seen is over
+    spool(cfg, 's1', 'PermissionRequest', { tool_name: 'AskUserQuestion' });
+    for (;;) if ((await next()).sessions.find(x => x.sid === 's1')?.agents.find(a => a.id === 'main')?.alert) break;
+    spool(cfg, 's1', 'UserPromptSubmit');
+    assert.equal((await second).status, 204);
+    await gone();
+  } finally {
+    running.stop();
+  }
+});
+
+test('writePortFile: writes the port (creating the folder); its remover deletes the file only while it still holds that port, also from an exiting process', () => {
+  const file = join(tempDir('fv-port-'), 'sub', 'port');
+  const drop = writePortFile(file, 4781);
+  assert.equal(readFileSync(file, 'utf8'), '4781');
+  drop();
+  assert.equal(existsSync(file), false);
+  drop();                                     // already gone: no throw
+  const old = writePortFile(file, 4781);
+  writeFileSync(file, '4782');                // a newer serve took the file over
+  old();
+  assert.equal(readFileSync(file, 'utf8'), '4782');
+  const server = new URL('../src/server.ts', import.meta.url).href;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `const { writePortFile } = await import(${JSON.stringify(server)}); process.on('exit', writePortFile(process.argv[1], 4783));`, file], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(existsSync(file), false);
 });

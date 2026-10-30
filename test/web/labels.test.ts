@@ -60,9 +60,9 @@ test('keepInside: a label stays inside the office frame; one under the feet on t
 });
 
 test('pillText: the active tool first, else the newest finished one, cut at 22', () => {
-  assert.equal(pillText(agent({ activeTools: [{ name: 'Read', label: 'engine.ts' }] })), '▸ Read engine.ts');
-  assert.equal(pillText(agent({ recentTools: [{ name: 'Bash', label: 'npm test', ms: 5 }] })), '▸ Bash npm test');
-  assert.equal(pillText(agent({ activeTools: [{ name: 'Grep', label: 'a-very-long-pattern-here' }] })), '▸ Grep a-very-long-patt…');
+  assert.equal(pillText(agent({ activeTools: [{ id: 'x', name: 'Read', label: 'engine.ts', at: 0 }] })), '▸ Read engine.ts');
+  assert.equal(pillText(agent({ recentTools: [{ id: 'x', name: 'Bash', label: 'npm test', at: 0, ms: 5, ok: true }] })), '▸ Bash npm test');
+  assert.equal(pillText(agent({ activeTools: [{ id: 'x', name: 'Grep', label: 'a-very-long-pattern-here', at: 0 }] })), '▸ Grep a-very-long-patt…');
   assert.equal(pillText(agent()), null);
 });
 test('toolName: an MCP tool reads as its product and tool, an unknown server as its name; others stay', () => {
@@ -78,8 +78,8 @@ test('toolName: an MCP tool reads as its product and tool, an unknown server as 
   assert.equal(toolName('mcp__my_server__do_it'), 'my server · do_it');
   assert.equal(toolName('Bash'), 'Bash');
   assert.equal(toolName('mcp__broken'), 'mcp__broken');
-  assert.equal(pillText(agent({ activeTools: [{ name: 'mcp__claude_ai_Microsoft_365__outlook_email_search', label: null }] })), '▸ Outlook · email_search');
-  assert.equal(termLines(agent({ activeTools: [{ name: 'mcp__claude_ai_Gmail__search_threads', label: null }] })).at(-1)!.text, 'Gmail · search_threads');
+  assert.equal(pillText(agent({ activeTools: [{ id: 'x', name: 'mcp__claude_ai_Microsoft_365__outlook_email_search', label: null, at: 0 }] })), '▸ Outlook · email_search');
+  assert.equal(termLines(agent({ activeTools: [{ id: 'x', name: 'mcp__claude_ai_Gmail__search_threads', label: null, at: 0 }] })).at(-1)!.text, 'Gmail · search_threads');
 });
 test('wrapBalloon: ~28 chars a line, at most 2 lines, long words split, cut with …', () => {
   assert.deepEqual(wrapBalloon('permission: Bash node -e "console.log(1)"'), ['permission: Bash node -e', '"console.log(1)"']);
@@ -105,12 +105,12 @@ test('balloon text in English: the lead stays on the first line, every line with
     }
 });
 
-const tools = ['A', 'B', 'C', 'D', 'E'].map(n => ({ name: 'Read', label: n, ms: 1 })); // newest first
+const tools = ['A', 'B', 'C', 'D', 'E'].map(n => ({ id: 'x', name: 'Read', label: n, at: 0, ms: 1, ok: true })); // newest first
 test('termLines: running — last five, oldest first, newest marked', () => {
   const l = termLines(agent({ recentTools: tools }));
   assert.deepEqual(l.map(x => x.text), ['Read E', 'Read D', 'Read C', 'Read B', 'Read A']);
   assert.deepEqual(l.map(x => x.kind), ['old', 'old', 'old', 'old', 'cur']);
-  assert.equal(termLines(agent({ recentTools: tools, activeTools: [{ name: 'Bash', label: 'npm test' }] })).at(-1)!.text, 'Bash npm test');
+  assert.equal(termLines(agent({ recentTools: tools, activeTools: [{ id: 'x', name: 'Bash', label: 'npm test', at: 0 }] })).at(-1)!.text, 'Bash npm test');
 });
 test('termLines: a wait ends with its reason, done ends with ✓', () => {
   const w = termLines(agent({ stage: 'waiting', alert: true, reasons: [{ kind: 'permission', tool: 'Bash', label: 'ls' }], recentTools: tools }));

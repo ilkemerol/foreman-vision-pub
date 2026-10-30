@@ -8,6 +8,14 @@
 body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 code { font-size: 11px; color: var(--dim); }
 button { font: inherit; color: inherit; }
+/* scrollbars: a thin theme-colored pill everywhere (scrollbarSize() measures this too). Firefox gets the same colors
+   from the standard properties, kept from Chrome, which ignores ::-webkit-scrollbar once they are set */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+::-webkit-scrollbar-button { display: none; }
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; } }
 
 /* page: floor sidebar | main (header + view); the detail panel floats over the right edge */
 .app { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100vh; overflow: hidden; }
@@ -17,7 +25,7 @@ button { font: inherit; color: inherit; }
 .empty { padding: 24px; color: var(--dim); }
 
 /* sidebar: floor picker */
-.sidebar { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; overflow: hidden auto; scrollbar-width: thin;
+.sidebar { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; overflow: hidden auto;
   background: var(--side); border-right: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 8px; padding: 0 2px 6px; border-bottom: 1px solid var(--line); }
 .brand .logo { flex: none; image-rendering: pixelated; }
@@ -174,27 +182,92 @@ button { font: inherit; color: inherit; }
 /* agent detail: a pop-up over the ⚙ drawer's dimmed, blurred floor, below the drawer itself; it fades and grows in */
 .modal { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; padding: 16px; }
 .modal > .drawer-dim { opacity: 1; animation: fade .28s ease; }
-.agent { position: relative; display: flex; flex-direction: column; width: 640px; max-width: 100%; max-height: calc(100vh - 32px); outline: none;
-  background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 24px 60px rgb(0 0 0 / .55);
+.agent { position: relative; display: flex; flex-direction: column; width: 1080px; max-width: calc(100vw - 32px); height: min(640px, calc(100vh - 32px)); outline: none;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 24px 60px rgb(0 0 0 / .55); overflow: hidden;
   animation: modalIn .28s cubic-bezier(.2,.8,.2,1); }
-.agent-body { overflow: auto; min-height: 96px; padding: 12px 16px; }   /* tall content scrolls inside, the head and the terminal stay */
+/* the details on the left (tall content scrolls inside, the head and the terminal stay), the terminal on the right */
+.agent .settings-head { gap: 10px; }
+.agent .pill { padding: 2px 7px; font-size: 10px; color: var(--dim); border: 1px solid var(--line); border-radius: 9px; }
+.agent .pill.wait { color: var(--wait); border-color: var(--wait); }
+.agent-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
+.agent-body { overflow: auto; padding: 12px 14px; border-right: 1px solid var(--line); }
+.agent-term { display: flex; flex-direction: column; min-height: 0; padding: 10px; }
+.agent-term .lterm { flex: 1; min-height: 0; height: auto; margin: 0; }
 .agent dl { display: grid; grid-template-columns: 90px 1fr; gap: 2px 8px; margin: 0; }
 .agent dt { color: var(--dim); }
 .agent dd { margin: 0; word-break: break-word; }
-/* the read-only terminal under the details: the hover terminal's colours, a fixed height that scrolls */
+.agent h4 { margin: 12px 0 6px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--dim); }
+/* the last tool call's card and the last 5 calls */
+.agent .call { padding: 8px 10px; background: var(--card-hi); border: 1px solid var(--line); border-radius: 8px; }
+.agent .call + .call { margin-top: 6px; }
+.agent .call .t { font-family: ui-monospace, Consolas, monospace; word-break: break-word; }
+.agent .call .t b { font-weight: 600; color: #7ee787; }
+.agent .call .s { display: flex; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--dim); }
+.agent .call .s .run { color: var(--accent); }
+.agent .call .s .ok { color: var(--run); }
+.agent .call .s .bad { color: var(--fail); }
+.agent .call .r { margin-top: 4px; font: 11px ui-monospace, Consolas, monospace; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent .call .j { float: right; padding: 0; font-size: 10px; color: var(--accent); cursor: pointer; background: none; border: 0; }
+.agent .call .j:hover, .agent .call .j:focus-visible { text-decoration: underline; }
+.agent ol { margin: 0; padding: 0; list-style: none; font: 11px ui-monospace, Consolas, monospace; }
+.agent ol li { display: flex; gap: 6px; padding: 2px 0; color: #c9d1d9; overflow-wrap: anywhere; }
+.agent ol li small { margin-left: auto; white-space: nowrap; color: var(--dim); }
+.agent ol .ok { color: var(--run); }
+.agent ol .bad { color: var(--fail); }
+/* main's open question under the terminal, scrolling inside once it is taller than 45 % */
+.agent .ask { flex: none; max-height: 45%; overflow: auto; margin-top: 8px; padding: 8px 10px; background: #11161d; border: 1px solid #30363d; border-radius: 6px; }
+.agent .ask .q { margin-bottom: 6px; color: var(--wait); }
+.agent .ask .q .h { margin-right: 6px; padding: 1px 6px; font-size: 10px; border: 1px solid var(--wait); border-radius: 9px; }
+.agent .ask .q small { color: var(--dim); }
+.agent .ask .opts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.agent .ask .opt { padding: 4px 8px; color: #e6edf3; cursor: pointer; background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+.agent .ask .opt small { display: block; font-size: 10px; color: var(--dim); text-align: left; }
+.agent .ask .opt.rec { border-color: var(--accent); }
+.agent .ask .opt.on { background: rgb(122 162 255 / .18); border-color: var(--accent); }
+.agent .ask .inp { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.agent .ask .inp input { flex: 1; min-width: 0; padding: 5px 8px; font: inherit; color: #e6edf3; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; }
+/* Send stays in sight at the bottom however far the questions scroll */
+.agent .ask .foot { position: sticky; bottom: -8px; display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+  margin: 0 -10px -8px; padding: 6px 10px 8px; background: #11161d; }
+.agent .ask .fail { color: var(--fail); }
+.agent .ask .send { padding: 4px 10px; color: var(--accent); cursor: pointer; background: none; border: 1px solid var(--accent); border-radius: 6px; }
+.agent .ask :disabled { cursor: default; opacity: .45; }
+@media (max-width: 900px) {
+  .agent { height: auto; max-height: calc(100vh - 32px); }
+  /* rows as tall as their content and the window scrolls, so the answer area is never cut off */
+  .agent-cols { grid-template-columns: 1fr; grid-auto-rows: max-content; overflow: auto; }
+  /* not a scroll box here, so its sticky Send holds to the pop-up's scroll instead */
+  .agent .ask { max-height: none; overflow: visible; }
+  .agent .ask .foot { bottom: 0; border-radius: 0 0 6px 6px; }
+  .agent-body { border-right: 0; border-bottom: 1px solid var(--line); }
+  .agent-term .lterm { flex: none; height: min(320px, 45vh); }
+}
+/* the read-only terminal beside the details: the hover terminal's colours, scrolling inside */
 .lterm { flex: none; display: flex; flex-direction: column; height: min(320px, 45vh); margin: 0 12px 12px; background: #0d1117;
   border: 1px solid #30363d; border-radius: 6px; font: 11px/1.5 ui-monospace, Consolas, monospace; color: #c9d1d9; }
 .lterm .tbar a { margin-left: auto; color: var(--accent); font-size: 10px; text-decoration: none; white-space: nowrap; }
 .lterm .tbar a:hover, .lterm .tbar a:focus-visible { text-decoration: underline; }
 .tlog { flex: 1; overflow: auto; padding: 6px 8px; white-space: pre-wrap; word-break: break-word; outline: none; border-radius: 0 0 6px 6px; }
 .tlog:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
-.tlog > div + div { margin-top: 3px; }
+.tlog > div + div, .tlog > div > div + div { margin-top: 3px; }
 .tlog .text { color: #e6edf3; }
 .tlog .tool { color: #7ee787; } .tlog .tool b { font-weight: 600; }
 .tlog .out, .tlog .err { color: #8b949e; padding-left: 3ch; text-indent: -2ch; }
 .tlog .err { color: #ff7b72; }
 .tlog .user { color: #79c0ff; }
 .tlog .dim { color: #6e7681; }
+/* the collapsed result's (open)/(close) control, an opened edit's diff, the block a card jumped to */
+.tlog .more { background: none; border: 0; font: inherit; padding: 0; cursor: pointer; color: #6e7681; }
+.tlog .more:hover, .tlog .more:focus-visible { color: var(--accent); text-decoration: underline; }
+.tlog .diff { padding-left: 3ch; }
+.tlog .add { color: #7ee787; background: rgb(46 160 67 / .15); }
+.tlog .del { color: #ff7b72; background: rgb(248 81 73 / .15); }
+.tlog .ctx { color: #8b949e; }
+.tlog .hl { background: rgb(122 162 255 / .10); border-left: 2px solid var(--accent); }
+/* an unanswered AskUserQuestion's questions and options, as the CLI's dialog lists them */
+.tlog .qs { padding-left: 3ch; }
+.tlog .qs > div + div { padding-left: 2ch; }
+.tlog .qs .q { color: var(--wait); }
 /* closing (App keeps it for .28 s): out with the ⚙ drawer's timing, inert so a click goes through to the floor */
 .modal.out > .drawer-dim { animation: fadeOut .28s ease forwards; }
 .modal.out > .agent { animation: modalOut .28s cubic-bezier(.2,.8,.2,1) forwards; }

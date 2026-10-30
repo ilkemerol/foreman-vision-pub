@@ -65,9 +65,10 @@ test('tool calls: active while running, then the newest 5 in recentTools', () =>
   hook(st, 'SubagentStart', { agent_id: 'A1' });
   hook(st, 'PreToolUse', { agent_id: 'A1', tool_name: 'Bash', tool_use_id: 't1', label: 'npm test' }, 5000);
   assert.deepEqual(agent(st, 'A1').activeTools.map(t => t.label), ['npm test']);
+  assert.deepEqual(agent(st, 'A1').activeTools, [{ id: 't1', name: 'Bash', label: 'npm test', at: 5000 }]);
   hook(st, 'PostToolUse', { agent_id: 'A1', tool_name: 'Bash', tool_use_id: 't1' }, 5400);
   assert.deepEqual(agent(st, 'A1').activeTools, []);
-  assert.deepEqual(agent(st, 'A1').recentTools[0], { name: 'Bash', label: 'npm test', ms: 400 });
+  assert.deepEqual(agent(st, 'A1').recentTools[0], { id: 't1', name: 'Bash', label: 'npm test', at: 5000, ms: 400, ok: true });
   for (let i = 0; i < 6; i++) {
     hook(st, 'PreToolUse', { agent_id: 'A1', tool_name: 'Read', tool_use_id: 'r' + i });
     hook(st, 'PostToolUse', { agent_id: 'A1', tool_name: 'Read', tool_use_id: 'r' + i });
@@ -237,7 +238,7 @@ test('PostToolUseFailure ends the tool call like PostToolUse', () => {
   hook(st, 'PreToolUse', { agent_id: 'A1', tool_name: 'Bash', tool_use_id: 't1' });
   hook(st, 'PostToolUseFailure', { agent_id: 'A1', tool_name: 'Bash', tool_use_id: 't1' });
   assert.deepEqual(agent(st, 'A1').activeTools, []);
-  assert.equal(agent(st, 'A1').recentTools[0].name, 'Bash');
+  assert.deepEqual([agent(st, 'A1').recentTools[0].name, agent(st, 'A1').recentTools[0].ok], ['Bash', false]);
   assert.equal(st.unknownEvents, 0);
 });
 

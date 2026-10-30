@@ -1,8 +1,6 @@
-import type { BoardStage, ConnectorCall, ContextUse, ForemanMode, HookPayload, Reason, SpoolLine, Stage, ToolCall, ToolRef } from '../shared/types.ts';
+import type { BoardStage, ConnectorCall, ContextUse, ForemanMode, HookPayload, Reason, SpoolLine, Stage, ToolCall, ToolRun } from '../shared/types.ts';
 
 export type HookStage = 'spawning' | 'running' | 'waiting' | 'idle' | 'stopped' | 'abandoned';
-
-export interface ActiveTool extends ToolRef { toolUseId: string; startedAt: number }
 
 export interface AgentFacts {
   id: string;               // agent_id, 'main', or 'pending:<tool_use_id>' until its agent is bound
@@ -13,7 +11,7 @@ export interface AgentFacts {
   hook: HookStage;
   waitReason: Reason | null;
   alert: boolean;
-  activeTools: ActiveTool[];
+  activeTools: ToolRun[];
   recentTools: ToolCall[];  // newest first, at most 5
   startedAt: number;
   lastEventAt: number;
@@ -198,7 +196,7 @@ function onHook(state: State, { ts, event, payload: p }: SpoolLine) {
       break;
     case 'PreToolUse':
       setHook(me, 'running', ts);
-      me.activeTools.push({ toolUseId: p.tool_use_id ?? '', name: p.tool_name ?? '?', label: p.label ?? null, startedAt: ts });
+      me.activeTools.push({ id: p.tool_use_id ?? '', name: p.tool_name ?? '?', label: p.label ?? null, at: ts });
       if (agentTool && p.tool_use_id) {
         const id = 'pending:' + p.tool_use_id;
         s.agents.set(id, newAgent(id, ts, {
@@ -210,10 +208,10 @@ function onHook(state: State, { ts, event, payload: p }: SpoolLine) {
       break;
     case 'PostToolUse':
     case 'PostToolUseFailure': {
-      const i = me.activeTools.findIndex(t => t.toolUseId === (p.tool_use_id ?? ''));
+      const i = me.activeTools.findIndex(t => t.id === (p.tool_use_id ?? ''));
       if (i >= 0) {
         const [t] = me.activeTools.splice(i, 1);
-        me.recentTools = [{ name: t.name, label: t.label, ms: ts - t.startedAt }, ...me.recentTools].slice(0, 5);
+        me.recentTools = [{ ...t, ms: ts - t.at, ok: event === 'PostToolUse' }, ...me.recentTools].slice(0, 5);
       }
       if (me.hook === 'waiting' && me.activeTools.length === 0) setHook(me, 'running', ts);
       if (agentTool && p.tool_use_id && event === 'PostToolUseFailure') s.agents.delete('pending:' + p.tool_use_id);

@@ -40,8 +40,12 @@ export const stretchStart = (a: AgentView) =>
 
 /** `from`: the total by default, `stretchStart(a)` for the current stretch. */
 export function duration(a: AgentView, now: number, from = a.startedAt): string {
-  if (!from) return '—';
-  const sec = Math.max(0, Math.round(((a.endedAt ?? now) - from) / 1000));
+  return from ? span((a.endedAt ?? now) - from) : '—';
+}
+
+/** A span in whole seconds, minutes or hours. */
+export function span(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
   if (sec < 60) return t('dur.s', { s: sec });
   if (sec < 3600) return t('dur.ms', { m: Math.floor(sec / 60), s: sec % 60 });
   return t('dur.hm', { h: Math.floor(sec / 3600), m: Math.floor((sec % 3600) / 60) });

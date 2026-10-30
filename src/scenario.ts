@@ -1,8 +1,10 @@
-import type { BoardStage, HookPayload } from '../shared/types.ts';
+import type { AskQuestion, BoardStage, HookPayload } from '../shared/types.ts';
 
-/** A spool line, a "__board" snapshot, an "__end" (the board and mode go), a "__usage" context use or an "__agentOut"
- *  sub-agent's tokens, `at` ms after its floor opens; `backdate` moves its ts into the past. */
-export interface ScriptLine { at: number; event: string; payload: Partial<HookPayload> & { text?: string; used?: number; out?: number }; backdate?: number }
+/** A spool line, a "__board" snapshot, an "__end" (the board and mode go), a "__usage" context use, an "__agentOut"
+ *  sub-agent's tokens or an "__ask" AskUserQuestion (answered in the terminal `terminal` ms later, else it waits for the
+ *  pop-up), `at` ms after its floor opens; `backdate` moves its ts into the past. */
+export interface ScriptLine { at: number; event: string; backdate?: number; payload: Partial<HookPayload> & { text?: string; used?: number; out?: number;
+  input?: Record<string, unknown>; output?: string; questions?: AskQuestion[]; terminal?: number } }
 export interface ScriptFloor { sid: string; cwd: string; startAt: number; foreman: boolean; lines: ScriptLine[]; metas: Record<string, string> } // agentId → toolUseId
 
 const TOOLS = [['Read', 'src/engine.ts'], ['Bash', 'npm test'], ['Grep', '"SessionView"'], ['Edit', 'src/view.ts'], ['Glob', 'src/**/*.ts']];
@@ -357,5 +359,50 @@ export function fireScenario(): ScriptFloor[] {
   return [
     floor('sim-fire', '/w/foreman-vision', [44 * M, 39 * M, 35 * M, 32 * M, at30(FIRE_AT), 18 * M, at30(FIRE_REFORM)], FIRE_BREAK),
     floor('sim-fire-b', '/w/notes', [41 * M, 37 * M, 33 * M, 31 * M, at30(FIRE_B_AT)]),
+  ];
+}
+
+/** `--scenario ask`: F1's main works (a failed push, two calls at once), then asks two questions (one multi-select) and
+ *  waits for the pop-up; its sub-agent asks too (no answer area). F2 (foreman off) and F3 are answered in the terminal. */
+export function askScenario(): ScriptFloor[] {
+  const call = (s: ReturnType<typeof script>, at: number, ms: number, tool_name: string, label: string, end = 'PostToolUse', output?: string) => {
+    const p = { tool_name, tool_use_id: `${tool_name}-${at}`, label, ...(output && { output }) };
+    s.add(at, 'PreToolUse', p);
+    s.add(at + ms, end, p);
+  };
+  const one = (question: string, a: string, b: string): AskQuestion[] => [{ question, header: 'Decision', options: [{ label: a }, { label: b }], multiSelect: false }];
+
+  const a = script();
+  a.open(0);
+  call(a, 500, 1000, 'Bash', 'npm test');
+  call(a, 1600, 100, 'Read', 'web/src/components/DetailPanel.tsx');
+  call(a, 1800, 100, 'Edit', 'web/src/logic/iso.ts');
+  call(a, 2000, 2100, 'Bash', 'git push', 'PostToolUseFailure', 'To github.com:fv/foreman-vision.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs');
+  call(a, 4500, 5000, 'Bash', 'npm run build');
+  call(a, 4500, 5000, 'Read', 'README.md');
+  a.add(10_000, '__ask', { tool_use_id: 'ask-main', questions: [
+    { question: 'Is the list of the last 5 calls useful, or should only the card stay?', header: 'List',
+      options: [{ label: 'Keep the list (Recommended)', description: 'The last 5 calls under the card' }, { label: 'Card only', description: 'The list goes, the card grows' }], multiSelect: false },
+    { question: 'Which fields should the card show?', header: 'Fields', options: [{ label: 'Duration', description: 'How long the call took' },
+      { label: 'Result summary', description: 'A one-line summary of the output' }, { label: 'Target' }], multiSelect: true },
+  ] });
+  a.start('a-explore', 'Explore', 1000);
+  a.loop('a-explore', 1000, 6000);
+  a.add(6000, '__ask', { agent_id: 'a-explore', agent_type: 'Explore', tool_use_id: 'ask-explore', terminal: 8000,
+    questions: one('Which folder should I scan?', 'web/src', 'src') });
+  a.loop('a-explore', 15_000, LOOP_END);
+
+  const b = script();
+  b.open(0);
+  b.add(3000, '__ask', { tool_use_id: 'ask-b', terminal: 20_000, questions: one('Sort the notes by date?', 'By date', 'By title') });
+
+  const c = script();
+  c.open(0);
+  c.add(2000, '__ask', { tool_use_id: 'ask-c', terminal: 15_000, questions: one('Delete the old branches?', 'Delete', 'Keep them') });
+
+  return [
+    { sid: 'sim-ask-a', cwd: '/w/foreman-vision', startAt: 0, foreman: true, lines: a.lines(), metas: {} },
+    { sid: 'sim-ask-b', cwd: '/w/notes', startAt: 2000, foreman: false, lines: b.lines(), metas: {} },
+    { sid: 'sim-ask-c', cwd: '/w/cleanup', startAt: 4000, foreman: true, lines: c.lines(), metas: {} },
   ];
 }

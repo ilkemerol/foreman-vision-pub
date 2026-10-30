@@ -1,17 +1,28 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { TermLine, TermPage } from '../shared/types.ts';
+import type { AskQuestion, TermLine, TermPage } from '../shared/types.ts';
 import { readNew } from './tail.ts';
 
 const TAIL_BYTES = 256 * 1024;   // a first look reads this much of the end: transcripts run to tens of MB
 const CHUNK = 1024 * 1024;       // at most this much a call after that
-const OUT_LINES = 15;     // a tool result shows its first lines, "+N lines" for the rest
-const MAX_CHARS = 4000;   // any text, so one long output cannot fill the terminal
+const OUT_LINES = 400;      // a tool result shows its first lines, "+N lines" for the rest
+const MAX_CHARS = 20_000;   // any text, so one long output cannot fill the terminal
 const INPUT_CHARS = 200;
 
-type Block = { type?: string; text?: unknown; name?: unknown; input?: unknown; content?: unknown; is_error?: unknown };
+type Block = { type?: string; text?: unknown; name?: unknown; id?: unknown; tool_use_id?: unknown; input?: unknown; content?: unknown; is_error?: unknown };
 
 const cut = (s: string, n = MAX_CHARS) => (s.length > n ? s.slice(0, n) + '…' : s);
+const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** A text's first OUT_LINES lines (cut at MAX_CHARS), the count of lines after them, and its last line when either cut dropped it. */
+function clip(text: string): { head: string; more: number; last?: string } {
+  const all = text.replace(/\s+$/, '').split('\n');
+  const lines = text.trim() ? all.slice(0, OUT_LINES) : [];
+  const joined = lines.join('\n');
+  const head = cut(joined);
+  const more = lines.length ? all.length - lines.length : 0;
+  return more > 0 || head !== joined ? { head, more, last: cut(all[all.length - 1], INPUT_CHARS) } : { head, more };
+}
 
 /** A content value's text and image count: a string, or an array of text / image blocks. */
 function flatten(c: unknown): { text: string; images: number } {
@@ -30,17 +41,52 @@ function flatten(c: unknown): { text: string; images: number } {
 function summary(input: unknown): string {
   if (!input || typeof input !== 'object') return '';
   const o = input as Record<string, unknown>;
-  const v = [o.command, o.description, o.file_path, o.pattern, o.url, o.skill, o.prompt].find(x => typeof x === 'string') as string | undefined;
+  const v = [o.command, o.description, o.file_path, o.pattern, o.url, o.skill, o.prompt,
+    Array.isArray(o.questions) ? (o.questions[0] as { question?: unknown })?.question : undefined].find(x => typeof x === 'string') as string | undefined;
   return cut((v ?? '').replace(/\s+/g, ' ').trim(), INPUT_CHARS);
+}
+
+/** AskUserQuestion's questions for the terminal's list, header, labels and descriptions cut; a malformed question or option is left out. */
+function questions(qs: unknown[]): AskQuestion[] {
+  const obj = (v: unknown) => (v && typeof v === 'object' ? v as Record<string, unknown> : {});
+  return qs.map(obj).filter(q => typeof q.question === 'string').map(q => ({
+    question: cut(q.question as string),
+    ...(typeof q.header === 'string' && { header: cut(q.header, INPUT_CHARS) }),
+    options: (Array.isArray(q.options) ? q.options : []).map(obj).filter(o => typeof o.label === 'string').map(o => ({
+      label: cut(o.label as string, INPUT_CHARS), ...(typeof o.description === 'string' && { description: cut(o.description, INPUT_CHARS) }),
+    })),
+    multiSelect: q.multiSelect === true,
+  }));
 }
 
 function result(b: Block): TermLine {
   const { text, images } = flatten(b.content);
-  const all = text.replace(/\s+$/, '').split('\n');
-  const head = text.trim() ? all.slice(0, OUT_LINES) : [];
-  const line: TermLine = { kind: b.is_error === true ? 'err' : 'out', text: cut(head.join('\n')) };
-  if (all.length > head.length && head.length) line.more = all.length - head.length;
+  const { head, more, last } = clip(text);
+  const line: TermLine = { kind: b.is_error === true ? 'err' : 'out', text: head };
+  if (typeof b.tool_use_id === 'string') line.id = b.tool_use_id;
+  if (more) line.more = more;
+  if (last !== undefined) line.last = last;
   if (images) line.images = images;
+  return line;
+}
+
+/** A tool call: its input in short, for Edit / MultiEdit / Write the text the pop-up's diff shows, for AskUserQuestion its questions. */
+function call(b: Block & { name: string }): TermLine {
+  const line: TermLine = { kind: 'tool', name: b.name, text: summary(b.input) };
+  if (typeof b.id === 'string') line.id = b.id;
+  const o = (b.input && typeof b.input === 'object' ? b.input : {}) as Record<string, unknown>;
+  // shortcut: Edit/MultiEdit sides are cut only at MAX_CHARS, so an edit past 20 000 chars diffs what was sent; move to a line cut if a real case shows up
+  const edit = (e: { old_string?: unknown; new_string?: unknown } | null) => ({ old: cut(str(e?.old_string)), new: cut(str(e?.new_string)) });
+  if (b.name === 'Edit') line.edits = [edit(o)];
+  else if (b.name === 'MultiEdit') line.edits = (Array.isArray(o.edits) ? o.edits : []).map(edit);
+  else if (b.name === 'Write') {
+    const { head, more } = clip(str(o.content));
+    line.edits = [{ old: '', new: head }];
+    if (more) line.more = more;
+  } else if (b.name === 'AskUserQuestion' && Array.isArray(o.questions)) {
+    const qs = questions(o.questions);
+    if (qs.length) line.questions = qs;
+  }
   return line;
 }
 
@@ -55,7 +101,7 @@ export function termLines(raw: string[]): TermLine[] {
     if (o?.type === 'assistant' && Array.isArray(o.message?.content)) {
       for (const b of o.message.content as Block[]) {
         if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) out.push({ kind: 'text', text: cut(b.text.trim()) });
-        else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'tool', name: b.name, text: summary(b.input) });
+        else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push(call(b as Block & { name: string }));
       }
     } else if (o?.type === 'user' && !o.isMeta) {
       const c = o.message?.content;

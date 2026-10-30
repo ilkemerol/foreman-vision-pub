@@ -33,7 +33,10 @@ export type Badge = 'stale-board' | 'off-board';
 export type ForemanMode = 'on' | 'task' | 'off';
 
 export interface ToolRef { name: string; label: string | null }
-export interface ToolCall extends ToolRef { ms: number }
+/** A tool call by its tool_use_id; `at`: its PreToolUse time (spool ts). */
+export interface ToolRun extends ToolRef { id: string; at: number }
+/** A finished call; `ok` false: PostToolUseFailure. */
+export interface ToolCall extends ToolRun { ms: number; ok: boolean }
 
 /** Why an agent waits: the browser writes it in its language; notification and note text is shown as it came. */
 export type Reason =
@@ -60,7 +63,7 @@ export interface AgentView {
   alert: boolean;          // waiting on the user
   badges: Badge[];
   note: string | null;     // board note at any stage
-  activeTools: ToolRef[];
+  activeTools: ToolRun[];
   recentTools: ToolCall[]; // newest first, at most 5
   model: string | null;
   tokens: number;          // its context now, as the CLI shows: input + cache read + cache creation + output of its last usage
@@ -92,7 +95,14 @@ export interface SessionView {
   context: ContextUse | null;   // main's; null until its first assistant message
   connectors: ConnectorCall[];   // main's MCP calls, one per server, oldest first; [] until the first
   hiddenAt: number | null;  // server time its floor was hidden (POST /api/floors/<sid>/hide); null: shown
+  ask?: AskView;
 }
+
+export interface AskOption { label: string; description?: string }
+/** One AskUserQuestion question as the tool takes it. */
+export interface AskQuestion { question: string; header?: string; options: AskOption[]; multiSelect: boolean }
+/** Main's open AskUserQuestion the pop-up can answer (POST /api/ask/<id>): a foreman session, its hook still waiting. */
+export interface AskView { id: string; questions: AskQuestion[] }
 
 export interface Snapshot {
   serverTime: number;
@@ -103,13 +113,19 @@ export interface Snapshot {
 
 export type SseMessage = { type: 'snapshot'; data: Snapshot };
 
+/** One side of an edit for the pop-up's diff. */
+export interface TermEdit { old: string; new: string }
 /** One line of the detail pop-up's read-only terminal (GET /api/term): a transcript line, cut short. Markers ([image],
  *  "+N lines", who sent a message) are the browser's to write in its language. */
 export interface TermLine {
   kind: 'text' | 'tool' | 'out' | 'err' | 'user' | 'big';   // big: a line too long to read in one go
   text: string;     // text: the assistant's text; tool: its input in short; out/err: the result's first lines; user: the message
   name?: string;    // tool: the tool's name
-  more?: number;    // out/err: lines cut after the first ones
+  id?: string;          // tool, out, err: the tool_use_id pairing a call with its result
+  edits?: TermEdit[];   // tool: Edit (one), MultiEdit (each of its edits), Write (old '', the content's first lines)
+  questions?: AskQuestion[];   // tool: AskUserQuestion's questions, listed under it until it is answered
+  more?: number;    // out/err: lines cut after the first ones; tool: Write content lines cut
+  last?: string;    // out/err: the last non-empty line, when the cut (lines or characters) dropped it
   images?: number;  // out/err: image blocks
   from?: string;    // user: 'prompt', else a queued message's origin.kind (coordinator, human, peer, task-notification)
 }

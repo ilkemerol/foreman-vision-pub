@@ -5,7 +5,7 @@ Steps for a coding agent (or a person) installing foreman-vision into Claude Cod
 foreman-vision installs one of two ways:
 
 - **Plugin (recommended)** - from this repo's own plugin marketplace. The hooks and the `/foreman-vision` command load with the plugin.
-- **Repo clone** - `git clone` into a folder of your choice, then `node src/cli.ts install` merges the hook into `settings.json`.
+- **Repo clone** - `git clone` into a folder of your choice, then `node src/cli.ts install` merges the hooks into `settings.json`.
 
 Never both on one machine: both hooks run, and every event is spooled twice.
 
@@ -31,7 +31,7 @@ jq --version
 
 The repo-clone method also needs `git`. Missing or old `node`: install the current LTS from [nodejs.org](https://nodejs.org/) (Windows: `winget install OpenJS.NodeJS.LTS`, macOS: `brew install node`). Missing `jq`: `winget install jqlang.jq` (Windows), `brew install jq` (macOS), `sudo apt-get install -y jq` (Debian/Ubuntu). Then open a new shell and check again. Missing `bash`, `curl` or `git` on Windows: install [Git for Windows](https://git-scm.com/download/win). Missing `claude`: install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) first.
 
-Without `jq` in the hook's shell, the hook writes nothing and foreman-vision shows no sessions.
+Without `jq` in the hook's shell, the hook writes nothing and foreman-vision shows no sessions. Without `curl` there, the pop-up cannot answer the main agent's questions; everything else works.
 
 ## 2. Choose the method
 
@@ -78,7 +78,7 @@ fi
 
 The hooks come with the plugin and load with it. Nothing goes into `settings.json` for them. At every session start the plugin also writes its folder to `~/.claude/foreman-vision/plugin-root`, which is how foreman finds it. Go to step 5.
 
-## 4. Repo clone: clone and install the hook
+## 4. Repo clone: clone and install the hooks
 
 Ask the user where the clone should go; `~/foreman-vision-pub` is a good default. Never put it under `~/.claude/skills/`: Claude Code loads a folder there as a plugin too, and its hooks would run next to the ones `install` writes.
 
@@ -92,14 +92,14 @@ case "$d" in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/"*) echo "STOP: $d is u
 esac
 ```
 
-On `STOP`, ask the user for another folder. Do not delete anything. Then merge the hook into `settings.json`:
+On `STOP`, ask the user for another folder. Do not delete anything. Then merge the hooks into `settings.json`:
 
 ```sh
 d="$HOME/foreman-vision-pub"   # the same folder
 node "$d/src/cli.ts" install
 ```
 
-It prints `written, backup: <file>`, `written` (no `settings.json` existed) or `no change`. It registers `hook/fv-hook.sh` for eleven hook events with absolute paths, replacing entries that point at an older clone. If the folder moves later, or `spool-dir` changes, run it again.
+It prints `written, backup: <file>`, `written` (no `settings.json` existed) or `no change`. It registers `hook/fv-hook.sh` for eleven hook events, and the answer hook `hook/fv-ask.sh` for `PermissionRequest` on `AskUserQuestion`, with absolute paths, replacing entries that point at an older clone. If the folder moves later, or `spool-dir` changes, run it again.
 
 ## 5. Remove the other method (ask first)
 
@@ -149,9 +149,9 @@ d="$HOME/foreman-vision-pub"   # the clone folder from step 4
 node "$d/src/cli.ts" doctor
 ```
 
-- The `jq` line must show a version, not `MISSING`.
-- Plugin: `plugin: foreman-vision@foreman-vision enabled, ...` and `hook entries: none in ...; the plugin brings its own`. Until the first new session starts, the plugin line says `folder not recorded yet`; that is fine.
-- Repo clone: `plugin: not installed` and `hook entries: 11/11 events`.
+- The `jq` line must show a version, not `MISSING`. A `curl` line with `MISSING` only means the pop-up cannot answer questions; tell the user.
+- Plugin: `plugin: foreman-vision@foreman-vision enabled, ...`, `hook entries: none in ...; the plugin brings its own` and `answer hook (...): from the plugin`. Until the first new session starts, the plugin line says `folder not recorded yet`; that is fine.
+- Repo clone: `plugin: not installed`, `hook entries: 11/11 events` and `answer hook (...): installed`.
 - A `WARNING` line means both methods are active: go back to step 5.
 
 Ask the user whether to start the view now. On yes, for the plugin:

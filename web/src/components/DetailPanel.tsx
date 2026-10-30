@@ -1,12 +1,18 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { AgentView, SessionView, TermLine, TermPage } from '../../../shared/types.ts';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { AgentView, SessionView } from '../../../shared/types.ts';
+import { termItems } from '../logic/blocks.ts';
+import { callTarget, lastCalls, statusPill, took } from '../logic/card.ts';
 import { roomAgents, type Room } from '../logic/hybrid.ts';
-import { getLang, t, TEXT, whyText, type Key } from '../logic/i18n.ts';
+import { getLang, t, whyText } from '../logic/i18n.ts';
 import { stageText, toolName } from '../logic/labels.ts';
-import { badgeText, colorOf, duration, stretchStart } from '../logic/model.ts';
+import { badgeText, colorOf, duration, span, stretchStart } from '../logic/model.ts';
+import { serverNow } from '../store.ts';
 import { AgentChip } from './AgentChip.tsx';
+import { AskForm } from './AskForm.tsx';
+import { LiveTerm, useTerm } from './LiveTerm.tsx';
 
-/** A pop-up over the dimmed, blurred floor with id, type, model, parent, job, note, active tool, last 5 tool calls, time and tokens. */
+/** A pop-up over the dimmed, blurred floor, side by side: id, type, model, parent, job, note, active tool, time, tokens,
+ *  the last tool call's card and the last 5 calls on the left, the live terminal on the right. */
 export function DetailPanel({ s, a, now, closing, onClose }: { s: SessionView; a: AgentView; now: number; closing: boolean; onClose: () => void }) {
   const parent = a.parentId ? s.agents.find(x => x.id === a.parentId) : undefined;
   const rows: [string, ReactNode][] = [
@@ -24,6 +30,21 @@ export function DetailPanel({ s, a, now, closing, onClose }: { s: SessionView; a
     [t('detail.stretch'), duration(a, now, stretchStart(a))],
     [t('detail.tokens'), a.tokens.toLocaleString(getLang())],
   ];
+  const { lines, remote } = useTerm(s.sid, a.id, !closing);
+  const items = useMemo(() => termItems(lines), [lines]);
+  const term = `${s.sid}/${a.id}`;
+  // a running call's time ticks every second; the snapshot's `now` is enough otherwise
+  const [tick, setTick] = useState(0);
+  const running = a.activeTools.length > 0;
+  useEffect(() => {
+    if (!running) return;
+    const i = setInterval(() => setTick(serverNow()), 1000);
+    return () => clearInterval(i);
+  }, [running]);
+  const clock = running ? Math.max(now, tick) : now;
+  const pill = statusPill(a, clock);
+  // tagged with its terminal, so another agent picked meanwhile never jumps to it
+  const [jump, setJump] = useState<{ term: string; id: string; n: number } | null>(null);
   const box = useRef<HTMLElement>(null);
   const x = useRef<HTMLButtonElement>(null);
   // focus moves in on open and back to the opener on close (not after the fade-out); another agent picked meanwhile keeps it in
@@ -39,90 +60,46 @@ export function DetailPanel({ s, a, now, closing, onClose }: { s: SessionView; a
       <section ref={box} className="agent" role="dialog" aria-modal="true" aria-labelledby="agent-title" tabIndex={-1}
         onKeyDown={e => {
           if (e.key === 'Escape') onClose();
-          // aria-modal: Tab cycles × (the terminal's link, its scroll area), never reaching the page behind
+          // aria-modal: Tab cycles × (the terminal's link, its scroll area, the answer area but a disabled Send), never reaching the page behind
           if (e.key === 'Tab') {
             e.preventDefault();
-            const f = [...box.current!.querySelectorAll<HTMLElement>('button, a[href], [tabindex="0"]')];
+            const f = [...box.current!.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')];
             const i = f.indexOf(document.activeElement as HTMLElement);
             f[i < 0 ? (e.shiftKey ? f.length - 1 : 0) : (i + (e.shiftKey ? f.length - 1 : 1)) % f.length]?.focus();
           }
         }}>
         <div className="settings-head">
           <h2 id="agent-title" style={{ color: colorOf(a) }}>{a.label}</h2>
+          <span className={'pill' + (pill.wait ? ' wait' : '')}>{pill.text}</span>
+          {a.model && <span className="pill">{a.model}</span>}
           <button ref={x} className="settings-x" title={t('close')} aria-label={t('close')} onClick={onClose}>×</button>
         </div>
-        <div className="agent-body">
-          <dl>{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
-          <h4>{t('detail.recent')}</h4>
-          <ol>{a.recentTools.map((x, i) => <li key={i}>{toolName(x.name)}{x.label ? `: ${x.label}` : ''} <small>{x.ms} ms</small></li>)}</ol>
+        <div className="agent-cols">
+          <div className="agent-body">
+            <dl>{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
+            <h4>{t('detail.last')}</h4>
+            {lastCalls(a, items, clock, s.cwd).map(c => (
+              <div key={c.id} className="call">
+                {items.some(i => 'key' in i && i.key === c.id) &&
+                  <button className="j" onClick={() => setJump(j => ({ term, id: c.id, n: (j?.n ?? 0) + 1 }))}>{t('detail.show')}</button>}
+                <div className="t"><b>{toolName(c.name)}</b>{c.target && ` · ${c.target}`}</div>
+                <div className="s"><span className={c.state}>{c.state === 'run' ? t('detail.run', { t: span(c.ms) }) : t(`detail.${c.state}`, { t: took(c.ms) })}</span></div>
+                {c.result && <div className="r">{c.result}</div>}
+              </div>
+            ))}
+            <h4>{t('detail.recent')}</h4>
+            <ol>{a.recentTools.map(x => {
+              const target = callTarget(x, items, s.cwd);
+              return <li key={x.id}><span className={x.ok ? 'ok' : 'bad'}>{x.ok ? '✓' : '✗'}</span>{toolName(x.name)}{target && ' · ' + target}<small>{took(x.ms)}</small></li>;
+            })}</ol>
+          </div>
+          <div className="agent-term">
+            <LiveTerm key={term} items={items} remote={remote} cwd={s.cwd} jump={jump?.term === term ? jump : null}
+              asking={a.activeTools.filter(x => x.name === 'AskUserQuestion').map(x => x.id)} />
+            {a.id === 'main' && s.ask && <AskForm key={s.ask.id} ask={s.ask} />}
+          </div>
         </div>
-        <LiveTerm key={`${s.sid}/${a.id}`} sid={s.sid} id={a.id} live={!closing} />
       </section>
-    </div>
-  );
-}
-
-const POLL_MS = 1000;
-const MAX_LINES = 500;
-
-/** The agent's transcript as a read-only terminal (GET /api/term, polled while the pop-up is open): newest at the
- *  bottom, following it unless the user scrolled up. Nothing is ever sent to the agent. */
-function LiveTerm({ sid, id, live }: { sid: string; id: string; live: boolean }) {
-  const [lines, setLines] = useState<TermLine[]>([]);
-  const [remote, setRemote] = useState<string | null>(null);
-  const log = useRef<HTMLDivElement>(null);
-  const follow = useRef(true);
-  const cursor = useRef<number | null>(null);
-  useEffect(() => {
-    if (!live) return;
-    let stop = false, timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      try {
-        const q = new URLSearchParams({ session: sid, agent: id });
-        if (cursor.current !== null) q.set('from', String(cursor.current));
-        const r = await fetch('/api/term?' + q, { headers: { 'X-Foreman-Vision': '1' } });
-        if (r.status === 404) return;   // no transcript for it (a board row, a pending spawn): nothing to follow
-        if (r.ok) {
-          const p = await r.json() as TermPage;
-          if (stop) return;
-          cursor.current = p.cursor;
-          if (p.remote) setRemote(p.remote);
-          if (p.reset || p.lines.length) setLines(old => [...(p.reset ? [] : old), ...p.lines].slice(-MAX_LINES));
-        }
-      } catch { /* server away: the next poll tries again */ }
-      if (!stop) timer = setTimeout(poll, POLL_MS);
-    };
-    poll();
-    return () => { stop = true; clearTimeout(timer); };
-  }, [live]);
-  useLayoutEffect(() => { if (follow.current && log.current) log.current.scrollTop = log.current.scrollHeight; }, [lines]);
-  return (
-    <div className="lterm">
-      <div className="tbar">
-        <i /><i /><i /><b>{t('term.title')}</b>
-        {remote && <a href={remote} target="_blank" rel="noreferrer">{t('term.remote')} ↗</a>}
-      </div>
-      <div ref={log} className="tlog" tabIndex={0} aria-label={t('term.title')}
-        onScroll={e => { const el = e.currentTarget; follow.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 4; }}>
-        {lines.length === 0 ? <div className="dim">{t('term.empty')}</div> : lines.map((l, i) => <Line key={i} l={l} />)}
-      </div>
-    </div>
-  );
-}
-
-function Line({ l }: { l: TermLine }) {
-  if (l.kind === 'text') return <div className="text">● {l.text}</div>;
-  if (l.kind === 'tool') return <div className="tool">● <b>{toolName(l.name ?? '')}</b>{l.text ? `(${l.text})` : ''}</div>;
-  if (l.kind === 'big') return <div className="out">⎿ {t('term.big')}</div>;
-  if (l.kind === 'user') {
-    const from = `term.from.${l.from}`;
-    return <div className="user">❯ {l.from !== 'prompt' && <b>[{from in TEXT.en ? t(from as Key) : l.from}] </b>}{l.text}</div>;
-  }
-  const images = Array(l.images ?? 0).fill(t('term.image')).join(' ');
-  return (
-    <div className={l.kind}>
-      ⎿ {l.text || images || t('term.none')}{l.text && images ? ' ' + images : ''}
-      {l.more ? <span className="dim">{'\n' + t('term.more', { n: l.more })}</span> : null}
     </div>
   );
 }

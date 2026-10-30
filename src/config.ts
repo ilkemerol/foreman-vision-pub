@@ -10,6 +10,7 @@ export interface Config {
   settingsPath: string;
   sessionsDir?: string; // Claude Code's session registry (<pid>.json): the Remote Control link; none, no link
   pluginRootFile?: string; // the plugin's SessionStart hook writes its folder here (read by doctor and foreman)
+  portFile?: string;    // the serving port for hook/fv-ask.sh: cli serve writes it, the hook reads it
 }
 
 /** Value of `--key value` in argv; a `--key` as the last argument is an error. */
@@ -40,6 +41,7 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env)
     settingsPath: pick('settings') ?? join(base, 'settings.json'),
     sessionsDir: join(base, 'sessions'),
     pluginRootFile: join(base, 'foreman-vision', 'plugin-root'),
+    portFile: join(base, 'foreman-vision', 'port'),
   };
 }
 
