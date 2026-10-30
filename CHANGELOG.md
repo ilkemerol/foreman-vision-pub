@@ -22,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `node src/cli.ts serve` writes its port to `~/.claude/foreman-vision/port` for the answer hook and removes the file on exit.
 - The terminal now gets up to 400 lines and 20,000 characters of a tool result (it was 15 lines and 4,000 characters), plus the last line of a result that was cut.
 - Scrollbars are thin and follow the theme colors.
+- The README images and GIFs show the current UI, including the side-by-side pop-up answering the main agent's question.
 
 ### Fixed
 

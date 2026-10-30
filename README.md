@@ -26,7 +26,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 > **foreman-vision works only with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's Claude) for now.** It is built on Claude Code's hook events and its session transcript files. Other coding agents and CLIs (Codex, Gemini CLI, Cursor, …) are not supported yet.
 
 <p align="center">
-  <img src="docs/media/demo-iso.gif" alt="foreman-vision isometric office: agents work at desks, two wait in the waiting room with balloons, one walks to the Done lounge" width="960">
+  <img src="docs/media/demo-iso.gif" alt="foreman-vision isometric office: agents work at desks, three wait in the waiting room with balloons, one walks to the Done lounge" width="960">
 </p>
 
 <p align="center"><sub>The isometric office, driven by the built-in simulator.</sub></p>
@@ -45,7 +45,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 - **Office life.** Windows follow your local time (clouds, birds, stars at night), the office dims in the evening and desk lamps come on, along with the foreman's desk lamp, a floor lamp by the waiting-room sofas and the library reading lamp. Smooth the cat wanders between rooms and naps on busy desks (click her for hearts), and every few minutes walks to her food and water bowls in the main office for a bite and a drink; a cleaning robot does its round every ten minutes.
 - **Couriers.** When the main agent calls a Microsoft 365 or Google connector tool (MCP), a courier with a matching cap brings an envelope to the foreman's desk.
 - **Coins and flames.** Busy sub-agents stack gold coins by their tokens (the context the CLI shows for them) and collect them on payday; an agent running for more than ten minutes gets a flame on its monitor.
-- **Agent details with a live terminal.** Click any agent for a pop-up with its details, its last tool call (status, time, a one-line result) and its last five calls on the left, and its terminal on the right. The terminal collapses tool results like the CLI: a click opens one, and an Edit opens as a red/green diff. In a foreman session, when the main agent asks you something (AskUserQuestion), you can answer it from the main agent's pop-up: the terminal's own dialog stays open until one of them answers. Nothing else is ever sent to an agent.
+- **Agent details with a live terminal.** Click any agent for a pop-up with its details, its last tool call (status, time, a one-line result) and its last five calls on the left, and its terminal on the right. The terminal collapses tool results like the CLI: a click opens one, and an Edit or Write opens as a red/green diff. In a foreman session, when the main agent asks you something (AskUserQuestion), you can answer it from the main agent's pop-up: the terminal's own dialog stays open until one of them answers. Nothing else is ever sent to an agent.
 - **Notifications.** Tab title count, favicon dot, desktop notifications and an optional sound. Clicking a notification jumps to the agent's floor and opens it.
 - **English and Turkish UI.** Pick the language in settings.
 - **Respects `prefers-reduced-motion`.** Decorative motion stops; status markers stay.
@@ -75,8 +75,8 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 </p>
 
 <p align="center">
-  <img src="docs/media/detail.png" alt="Agent details with the read-only live terminal" width="720">
-  <br/><sub>Agent details and the live terminal</sub>
+  <img src="docs/media/detail.png" alt="The main agent's pop-up: details, the last tool call card and the last five calls on the left; the live terminal with the open question and the answer form with its options on the right" width="720">
+  <br/><sub>The main agent's pop-up, answering its question (<code>--scenario ask</code>)</sub>
 </p>
 
 ## Requirements
