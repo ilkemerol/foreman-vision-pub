@@ -268,6 +268,10 @@ foreman-vision stands on the shoulders of other projects.
 
 Product names and logos shown by the couriers (Microsoft 365, Teams, Outlook, Google, Gmail, …) are trademarks of their owners. foreman-vision is not affiliated with or endorsed by them, or by Anthropic.
 
+## Contributing
+
+Bug reports and ideas are welcome in the [issue tracker](https://github.com/ilkemerol/foreman-vision-pub/issues). Pull requests are open to collaborators only, so GitHub won't let you open one from a fork.
+
 ## License
 
 foreman-vision's own code is released under the [MIT License](LICENSE).
