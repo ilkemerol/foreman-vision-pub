@@ -40,6 +40,21 @@ test('PostToolUse(Agent) agentId binds when meta.json is missing', () => {
   assert.equal(st.sessions.get('s1')!.agents.has('pending:T1'), false);
 });
 
+test('a foreground agent with no SubagentStart/Stop stops when its Agent call completes', () => {
+  // a built-in web-fetch agent ran in the foreground and sent no SubagentStart or SubagentStop
+  const st = emptyState();
+  hook(st, 'PreToolUse', { tool_name: 'Agent', tool_use_id: 'T1', label: 'read the page', subagent_type: 'web-fetch' }, 0);
+  hook(st, 'PreToolUse', { agent_id: 'A1', agent_type: 'web-fetch', tool_name: 'WebFetch', tool_use_id: 'w' }, 10);
+  hook(st, 'PostToolUse', { agent_id: 'A1', agent_type: 'web-fetch', tool_name: 'WebFetch', tool_use_id: 'w' }, 20);
+  hook(st, 'PostToolUse', { tool_name: 'Agent', tool_use_id: 'T1', response_agent_id: 'A1', response_status: 'completed' }, 30);
+  assert.deepEqual([agent(st, 'A1').hook, agent(st, 'A1').endedAt, agent(st, 'A1').description], ['stopped', 30, 'read the page']);
+  // a background launch answers at once with async_launched: the agent keeps running
+  hook(st, 'PreToolUse', { tool_name: 'Agent', tool_use_id: 'T2', label: 'bg' }, 40);
+  hook(st, 'SubagentStart', { agent_id: 'A2', agent_type: 'Explore' }, 41);
+  hook(st, 'PostToolUse', { tool_name: 'Agent', tool_use_id: 'T2', response_agent_id: 'A2', response_status: 'async_launched' }, 42);
+  assert.equal(agent(st, 'A2').hook, 'running');
+});
+
 test('a bind that arrives before SubagentStart is applied when the agent appears', () => {
   const st = emptyState();
   hook(st, 'PreToolUse', { tool_name: 'Agent', tool_use_id: 'T1', label: 'early' });

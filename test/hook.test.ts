@@ -62,8 +62,8 @@ test('Agent call fields and tool_response agentId; a string tool_response is har
     tool_response: { agentId: 'a123', status: 'async_launched' },
   });
   assert.deepEqual(
-    [post.lines[0].payload.label, post.lines[0].payload.subagent_type, post.lines[0].payload.background, post.lines[0].payload.response_agent_id],
-    ['read files', 'Explore', true, 'a123'],
+    [post.lines[0].payload.label, post.lines[0].payload.subagent_type, post.lines[0].payload.background, post.lines[0].payload.response_agent_id, post.lines[0].payload.response_status],
+    ['read files', 'Explore', true, 'a123', 'async_launched'],
   );
   const str = run({ session_id: 's1', hook_event_name: 'PostToolUse', tool_name: 'Read', tool_response: 'text' });
   assert.equal(str.r.status, 0);

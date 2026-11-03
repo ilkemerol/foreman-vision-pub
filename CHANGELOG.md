@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Walks still wander, but no longer turn back within a leg: an agent no longer walks past a door and comes back to it.
+- A foreground sub-agent (such as the built-in `web-fetch`) no longer stays on its desk as abandoned: Claude Code sends it no SubagentStop, so its finished Agent call now stops it.
 
 ## 2026-10-30
 

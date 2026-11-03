@@ -23,6 +23,7 @@ export interface HookPayload {
   subagent_type?: string;
   background?: boolean;
   response_agent_id?: string;
+  response_status?: string;
 }
 
 export type BoardStage = 'queued' | 'running' | 'waiting' | 'verifying' | 'done' | 'failed';

@@ -215,7 +215,12 @@ function onHook(state: State, { ts, event, payload: p }: SpoolLine) {
       }
       if (me.hook === 'waiting' && me.activeTools.length === 0) setHook(me, 'running', ts);
       if (agentTool && p.tool_use_id && event === 'PostToolUseFailure') s.agents.delete('pending:' + p.tool_use_id);
-      else if (agentTool && p.tool_use_id && p.response_agent_id) link(s, p.tool_use_id, p.response_agent_id);
+      else if (agentTool && p.tool_use_id && p.response_agent_id) {
+        link(s, p.tool_use_id, p.response_agent_id);
+        // a foreground agent (built-in web-fetch) sends no SubagentStop: its Agent call's completed answer is the stop
+        const a = s.agents.get(p.response_agent_id);
+        if (a && p.response_status === 'completed' && a.hook !== 'stopped') { a.activeTools = []; setHook(a, 'stopped', ts); a.endedAt = ts; }
+      }
       break;
     }
     case 'PermissionRequest':

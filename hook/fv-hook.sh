@@ -24,7 +24,8 @@ out=$(jq -r '
         label: ($in | if type == "object" then (.command // .description // .file_path // .pattern // .url // .skill // .prompt) else null end | if type == "string" then cut(120) else null end),
         subagent_type: ($in | if type == "object" then .subagent_type else null end),
         background: ($in | if type == "object" then .run_in_background else null end),
-        response_agent_id: (.tool_response | if type == "object" then .agentId else null end)
+        response_agent_id: (.tool_response | if type == "object" then .agentId else null end),
+        response_status: (.tool_response | if type == "object" then .status else null end)
       } | with_entries(select(.value != null)))
     }
   | "\(.payload.session_id // "")\t\(tojson)"
