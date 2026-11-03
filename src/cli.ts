@@ -37,7 +37,7 @@ try {
       console.log(doctor(cfg));
       break;
     default:
-      console.error('usage: node src/cli.ts serve [--port N] | simulate [x.jsonl] [--copies N] [--speed X] [--scenario pixel|hybrid|done|fire|ask] | install | uninstall | doctor');
+      console.error('usage: node src/cli.ts serve [--port N] | simulate [x.jsonl] [--copies N] [--speed X] [--scenario pixel|hybrid|done|fire|ask|team] | install | uninstall | doctor');
       process.exitCode = 1;
   }
 } catch (e) {

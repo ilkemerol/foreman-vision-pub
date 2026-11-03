@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AskQuestion, HookPayload } from '../shared/types.ts';
 import { flag, num, type Config } from './config.ts';
-import { askScenario, doneScenario, fireScenario, hybridScenario, pixelScenario, type ScriptFloor } from './scenario.ts';
+import { askScenario, doneScenario, fireScenario, hybridScenario, pixelScenario, teamScenario, type ScriptFloor } from './scenario.ts';
 import { serve } from './server.ts';
 
 /** A spool line, a foreman board snapshot a recorded session saw (event "__board"), a board end (event "__end", as
@@ -138,10 +138,10 @@ export async function simulate(cfg: Config, args: string[]) {
   });
 }
 
-const SCENARIOS: Record<string, () => ScriptFloor[]> = { pixel: pixelScenario, hybrid: hybridScenario, done: doneScenario, fire: fireScenario, ask: askScenario };
+const SCENARIOS: Record<string, () => ScriptFloor[]> = { pixel: pixelScenario, hybrid: hybridScenario, done: doneScenario, fire: fireScenario, ask: askScenario, team: teamScenario };
 
 /** `--scenario <name>`: scripted floors (pixel: the office tour, hybrid: crowded floors, done: a full Done lounge, fire: the server-room fire,
- *  ask: answering questions from the pop-up), each line placed at (startAt + at) / speed. */
+ *  ask: answering questions from the pop-up, team: team seating), each line placed at (startAt + at) / speed. */
 async function playScenario(cfg: Config, name: string, speed: number) {
   const make = Object.hasOwn(SCENARIOS, name) ? SCENARIOS[name] : undefined;
   if (!make) throw new Error(`unknown scenario: ${name} (available: ${Object.keys(SCENARIOS).join(', ')})`);

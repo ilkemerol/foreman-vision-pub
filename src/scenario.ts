@@ -263,6 +263,31 @@ export function doneScenario(): ScriptFloor[] {
   return [{ sid: 'sim-done', cwd: '/w/foreman-vision', startAt: 0, foreman: true, lines: a.lines(), metas: {} }];
 }
 
+/** Team seating: one foreman floor; four marketing:* and three general-purpose from the start, three caveman:* at 10 s,
+ *  two Explore and a claude at 20 s; a marketing:* and a general-purpose are done at 40 s, a new marketing:seo comes at
+ *  50 s (it joins its seated teammates); the rest work on. */
+export function teamScenario(): ScriptFloor[] {
+  const ROWS: [type: string, at: number][] = [
+    ['marketing:copywriter', 0], ['marketing:seo', 0], ['marketing:social', 0], ['marketing:analytics', 0],
+    ['general-purpose', 0], ['general-purpose', 0], ['general-purpose', 0],
+    ['caveman:cavecrew-builder', 10_000], ['caveman:cavecrew-investigator', 10_000], ['caveman:cavecrew-reviewer', 10_000],
+    ['Explore', 20_000], ['Explore', 20_000], ['claude', 20_000], ['marketing:seo', 50_000],
+  ];
+  const DONE_AT = 40_000, DONE = new Set([1, 5]);   // marketing:copywriter and the first general-purpose
+  const jobs: Record<number, [string, string, string]> = {};
+  ROWS.forEach(([type], i) => { jobs[i + 1] = [`tm-${i + 1}`, type, type]; });   // the type as its job: the tags show the teams
+  const a = script(jobs);
+  a.open(0);
+  ROWS.forEach(([type, at], i) => {
+    const n = i + 1, id = jobs[n][0], end = DONE.has(n) ? DONE_AT : LOOP_END;
+    a.start(id, type, at);
+    a.board(at, [[n, 'running']]);
+    a.loop(id, at, end);
+    if (end < LOOP_END) { a.stop(id, end); a.board(end, [[n, 'done']]); }
+  });
+  return [{ sid: 'sim-team', cwd: '/w/foreman-vision', startAt: 0, foreman: true, lines: a.lines(), metas: {} }];
+}
+
 /** `from` (main when null) calls Agent at `at`; agent `id` starts 300 ms later and the call returns bound to it. */
 function spawn(s: ReturnType<typeof script>, from: { agent_id: string; agent_type: string } | null, id: string, type: string, label: string, at: number) {
   const call = { ...from, tool_name: 'Agent', tool_use_id: 'T-' + id, subagent_type: type, label };
