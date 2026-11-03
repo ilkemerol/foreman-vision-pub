@@ -4,7 +4,7 @@ import { pathLen, pointAt } from '../../web/src/logic/fx.ts';
 import { doneAisle, doneSeats, officeLayout, queueSpot, waitSpots, type Fit, type Pt } from '../../web/src/logic/layout.ts';
 import { coffeeRooms, stepRooms, tripGap } from '../../web/src/logic/coffee.ts';
 import { DECOR, decorKeepOut, placeDecor, walkBlocks } from '../../web/src/logic/decor.ts';
-import { advanceWalkers, AWAY_MS, awayGap, type DoorState, frameOf, nearDoor, outside, route, standIndex, stepBurns, stepDoor, syncWalkers, walksAt, type Walker } from '../../web/src/logic/motion.ts';
+import { advanceWalkers, AWAY_MS, awayGap, type DoorState, frameOf, nearDoor, outside, route, standIndex, stepBurns, stepDoor, syncWalkers, turnsBack, walksAt, type Walker } from '../../web/src/logic/motion.ts';
 import { officeScene, type Place, type Spot } from '../../web/src/logic/scene.ts';
 import { agent } from './fake.ts';
 
@@ -40,15 +40,15 @@ const spotsOf = (l: typeof MIN): Spot[] => [outside(l), ...l.desks.map(k => ({ r
   ...waitSpots(6, l).map(pt => ({ room: 'wait' as const, pt, aisle: pt.y })), ...doneSeats(l).map(pt => ({ room: 'done' as const, pt, aisle: doneAisle(l, pt) }))];
 test('route: a varied walk differs between agents from one desk to one Waiting room spot, and is the same for the same agent and ends', () => {
   const vary = (seed: string) => ({ seed, blocks: walkBlocks(MIN) }), to: Spot = { room: 'wait', pt: waitSpots(1, MIN)[0], aisle: waitSpots(1, MIN)[0].y };
-  const ways = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(k => JSON.stringify(route(MIN, desk(0), to, vary(k))));
+  const ways = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(k => JSON.stringify(route(MIN, desk(3), to, vary(k))));   // a lower-row desk: its way up to the hall passes the upper row
   assert.ok(new Set(ways).size >= 3, `${new Set(ways).size} routes`);
-  assert.deepEqual(route(MIN, desk(0), to, vary('a')), route(MIN, desk(0), to, vary('a')));
-  assert.notDeepEqual(route(MIN, desk(0), to, vary('a')), route(MIN, desk(0), to));
+  assert.deepEqual(route(MIN, desk(3), to, vary('a')), route(MIN, desk(3), to, vary('a')));
+  assert.notDeepEqual(route(MIN, desk(3), to, vary('a')), route(MIN, desk(3), to));
 });
-test('route: in a room of several desk rows varied walks reach the door column along other rows\' aisles, turning left and right of the desk columns', () => {
-  const l = GRIDS[3], blocks = walkBlocks(l), main = l.desks.filter(d => d.room === 'main'), row0 = main.filter(d => d.y === main[0].y);
+test('route: in a room of several desk rows varied walks reach the door column along other rows\' aisles, turning beside the desk columns only toward it', () => {
+  const l = GRIDS[3], blocks = walkBlocks(l), main = l.desks.filter(d => d.room === 'main'), last = main.filter(d => d.y === main[main.length - 1].y);   // the bottom row: a row between it and the hall
   assert.equal(l.key, '47x25');
-  const d = row0[Math.floor(row0.length / 2)], from: Spot = { room: 'main', pt: d.seat, aisle: d.aisle }, w = waitSpots(1, l)[0], to: Spot = { room: 'wait', pt: w, aisle: w.y };
+  const d = last[Math.floor(last.length / 2)], from: Spot = { room: 'main', pt: d.seat, aisle: d.aisle }, w = waitSpots(1, l)[0], to: Spot = { room: 'wait', pt: w, aisle: w.y };
   const aisles = [l.foreman.aisle, ...new Set(main.map(k => k.aisle))], rows = new Set<number>(), sides = new Set<number>();
   for (let k = 0; k < 40; k++) {
     const p = route(l, from, to, { seed: `a@${k}`, blocks }), y = p.find(q => q.x === l.lane.main)!.y;
@@ -56,7 +56,7 @@ test('route: in a room of several desk rows varied walks reach the door column a
     for (const q of p.slice(2)) if (q.x !== d.seat.x && q.x !== l.lane.main && q.y !== l.hallY && q.x < l.rooms.main.x1) sides.add(Math.sign(q.x - d.seat.x));
   }
   assert.ok(rows.size >= 2 && !rows.has(-1), `rows ${[...rows]}`);
-  assert.deepEqual([...sides].sort(), [-1, 1]);
+  assert.deepEqual([...sides], [Math.sign(l.lane.main - d.seat.x)]);   // never away from the door column
 });
 test('route: every varied walk stays on the floor, off walls, furniture and standing decor, its paid walker standing where the base one does, at most 1.6 times the base route, at the 5 standard grids', () => {
   for (const l of GRIDS) {
@@ -84,6 +84,33 @@ test('route: every varied walk stays on the floor, off walls, furniture and stan
     }
     assert.ok(varied > 100, `${l.key}: ${varied} varied`);
   }
+});
+// logical walks: a desk of each work room, a Waiting room and a Done spot and the entrance, to and from each other
+const legEnds = (l: typeof MIN): Spot[] => {
+  const w = waitSpots(1, l)[0], d = doneSeats(l)[0];
+  return [...(['main', 'server', 'library'] as const).map(r => l.desks.find(k => k.room === r)!).map(k => ({ room: k.room, pt: k.seat, aisle: k.aisle })),
+    { room: 'wait', pt: w, aisle: w.y }, { room: 'done', pt: d, aisle: doneAisle(l, d) }, outside(l)];
+};
+test('route: no seeded walk turns back within a leg, at the 5 standard grids', () => {
+  for (const l of GRIDS) {
+    const blocks = walkBlocks(l), ends = legEnds(l);
+    for (const a of ends) for (const b of ends) if (a !== b)
+      for (let k = 0; k < 40; k++) { const p = route(l, a, b, { seed: `a@${k}`, blocks }); assert.ok(!turnsBack(l, p), `${l.key} a@${k} ${JSON.stringify(p)}`); }
+  }
+});
+test('route: seeded walks still wander, at least a quarter of them off the base route, at the 5 standard grids', () => {
+  for (const l of GRIDS) {
+    const blocks = walkBlocks(l), ends = legEnds(l);
+    let varied = 0, n = 0;
+    for (const a of ends) for (const b of ends) if (a !== b)
+      for (let k = 0; k < 40; k++, n++) if (JSON.stringify(route(l, a, b, { seed: `a@${k}`, blocks })) !== JSON.stringify(route(l, a, b))) varied++;
+    assert.ok(varied >= n / 4, `${l.key}: ${varied}/${n} varied`);
+  }
+});
+test('turnsBack: a walk past the hall door\'s level up the main office and back down to it turns back; the base route does not', () => {
+  const server = MIN.desks.find(d => d.room === 'server')!, from = desk(1);   // seat (104, 170), aisle 182; the hall at y 144
+  assert.equal(turnsBack(MIN, [from.pt, { x: 104, y: 182 }, { x: 136, y: 182 }, { x: 136, y: 86 }, { x: 200, y: 86 }, { x: 200, y: 144 }, { x: 376, y: 144 }, { x: 376, y: 94 }, server.seat]), true);
+  assert.equal(turnsBack(MIN, route(MIN, from, { room: 'server', pt: server.seat, aisle: server.aisle })), false);
 });
 test('syncWalkers: with the layout\'s blocks two agents walking the same way take their own routes', () => {
   const w = new Map<string, Walker>(), sc = officeScene([agent({ id: 'a' }), agent({ id: 'b' })], 0, MIN);

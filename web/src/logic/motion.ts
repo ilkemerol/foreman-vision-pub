@@ -87,17 +87,32 @@ export function clearWalk(l: Layout, path: Pt[], base: Pt[], { boxes, feet }: Wa
   return true;
 }
 
+/** Whether `path` turns back on x or y within its way out (to its first step along the corridor line)
+ *  or its way in (from its last), but for its first vertical run (seat to aisle, and a line below it) and its last. With
+ *  no corridor step (both ends' door columns one) the two ways meet on that column, each walking all of it. */
+export function turnsBack(l: Layout, path: Pt[]): boolean {
+  const hall = path.flatMap((q, i) => i && q.y === path[i - 1].y && q.y >= l.hallY && q.y <= l.hallY + 8 && Math.max(q.x, path[i - 1].x) > l.rooms.hall.x0 ? [i - 1, i] : []);
+  const lanes = Object.values(l.lane), on = path.flatMap((q, i) => lanes.includes(q.x) ? [i] : []);
+  const [i, j] = hall.length ? [hall[0], hall[hall.length - 1]] : on.length ? [on[on.length - 1], on[0]] : [0, path.length - 1];
+  const steps = (p: Pt[]) => p.slice(1).map((q, k) => [Math.sign(q.x - p[k].x), Math.sign(q.y - p[k].y)]);
+  const out = steps(path.slice(0, i + 1)), into = steps(path.slice(j));
+  while (out.length && !out[0][0]) out.shift();
+  while (into.length && !into[into.length - 1][0]) into.pop();
+  const back = (s: number[][]) => [0, 1].some(a => new Set(s.map(d => d[a]).filter(Boolean)).size > 1);
+  return back(out) || back(into);
+}
+
 /** Out of `from`'s room, through the corridor, into `to`'s. Varied (`vary`: a walk's seed and the layout's blocks) the
  *  walk leaves (along its aisle only from an upper room's desk, whose paid walker stands in place, or the entrance) and
  *  enters by one of its rooms' ways (ways), and takes the corridor 0/4/8 px below its line: the way out first, then the
  *  way in, then the corridor line, each the first in an order seeded by the seed and both ends whose route is clear
- *  (clearWalk) and at most DETOUR times the base route; the base route always is. */
+ *  (clearWalk), never turns back (turnsBack) and is at most DETOUR times the base route; the base route always is. */
 export function route(l: Layout, from: Spot, to: Spot, vary?: { seed: string; blocks: WalkBlocks }): Pt[] {
   const base = join(l, from, to);
   if (!vary) return base;
   const key = `${vary.seed}:${from.pt.x},${from.pt.y}>${to.pt.x},${to.pt.y}`, max = DETOUR * len(base);
   const order = <T>(xs: T[], side: string): T[] => xs.map((x, i) => ({ x, k: hash(`${key}:${side}${i}`) })).sort((a, b) => a.k - b.k).map(o => o.x);
-  const ok = (p: Pt[]) => len(p) <= max && clearWalk(l, p, base, vary.blocks);
+  const ok = (p: Pt[]) => len(p) <= max && !turnsBack(l, p) && clearWalk(l, p, base, vary.blocks);
   const fixed = from.room === 'out' || from.room === 'server' || from.room === 'library';
   const wf = order(ways(l, from, fixed), 'f').find(w => ok(join(l, from, to, w))) ?? BASE;
   const wt = order(ways(l, to, to.room === 'out'), 't').find(w => ok(join(l, from, to, wf, w))) ?? BASE;
