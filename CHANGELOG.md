@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Team seating.** Sub-agents of one team sit together. The team is the part of the type before its first `:` (`marketing:seo` and `marketing:social` are team `marketing`), or the whole type when it has none (`Explore`, `Plan`). A team fills a two-row block in one room: two desks at the front, the two right behind them, then it grows sideways. Its first member picks a room with a free 2×2 block when one exists; when the room is full, the rest of the team sits together in the main office. Nobody already seated changes desk, and a member that arrives late joins its seated teammates. `general-purpose`, `claude`, `unknown` and `workflow-subagent` sub-agents have no team and are seated at random as before.
 - `node src/cli.ts simulate --scenario team` plays a foreman floor with marketing, caveman, Explore and general-purpose sub-agents.
+- Three short isometric GIFs in the README: the monitor flames, the server-room fire and the medics.
 
 ### Fixed
 

@@ -45,6 +45,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 - **Office life.** Windows follow your local time (clouds, birds, stars at night), the office dims in the evening and desk lamps come on, along with the foreman's desk lamp, a floor lamp by the waiting-room sofas and the library reading lamp. Smooth the cat wanders between rooms and naps on busy desks (click her for hearts), and every few minutes walks to her food and water bowls in the main office for a bite and a drink; a cleaning robot does its round every ten minutes.
 - **Couriers.** When the main agent calls a Microsoft 365 or Google connector tool (MCP), a courier with a matching cap brings an envelope to the foreman's desk.
 - **Coins and flames.** Busy sub-agents stack gold coins by their tokens (the context the CLI shows for them) and collect them on payday; an agent running for more than ten minutes gets a flame on its monitor.
+- **Server-room fire.** When five sub-agents on a floor have each worked for 30 minutes or more, the server room catches fire and the fire brigade comes to put it out.
 - **Agent details with a live terminal.** Click any agent for a pop-up with its details, its last tool call (status, time, a one-line result) and its last five calls on the left, and its terminal on the right. The terminal collapses tool results like the CLI: a click opens one, and an Edit or Write opens as a red/green diff. In a foreman session, when the main agent asks you something (AskUserQuestion), you can answer it from the main agent's pop-up: the terminal's own dialog stays open until one of them answers. Nothing else is ever sent to an agent.
 - **Notifications.** Tab title count, favicon dot, desktop notifications and an optional sound. Clicking a notification jumps to the agent's floor and opens it.
 - **English and Turkish UI.** Pick the language in settings.
@@ -73,6 +74,19 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
   <img src="docs/media/demo-flat.gif" alt="Flat office: a new sub-agent walks in from the entrance while a courier delivers mail to the foreman" width="960">
   <br/><sub>The flat office with the floor sidebar.</sub>
 </p>
+
+<table>
+  <tr>
+    <td><img src="docs/media/desk-flames.gif" alt="Sub-agents working for more than ten minutes, each with a flame on its monitor"></td>
+    <td><img src="docs/media/server-fire.gif" alt="The server room catches fire and the fire brigade walks in and puts it out"></td>
+    <td><img src="docs/media/medics.gif" alt="A failed sub-agent faints at its desk in a cloud of smoke and the medics carry it out on a stretcher"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Past ten minutes, a flame on the monitor</sub></td>
+    <td align="center"><sub>Five agents past 30 minutes: the server room burns</sub></td>
+    <td align="center"><sub>A failed agent leaves with the medics</sub></td>
+  </tr>
+</table>
 
 <p align="center">
   <img src="docs/media/detail.png" alt="The main agent's pop-up: details, the last tool call card and the last five calls on the left; the live terminal with the open question and the answer form with its options on the right" width="720">
