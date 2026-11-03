@@ -1,6 +1,7 @@
 import type { AgentView, Stage } from '../../../shared/types.ts';
 import { doneAisle, doneSeats, queueSpot, WAIT_MAX, waitAisle, waitSpots, type Layout, type Pt, type WorkRoom } from './layout.ts';
 import { hash } from './model.ts';
+import { blockFree, blockOrder, teamOf } from './team.ts';
 
 // Who is where on one floor. The geometry is layout.ts's.
 export const FAIL_RELEASE_MS = 20_000;
@@ -34,11 +35,13 @@ const byStart = (agents: AgentView[]) =>
 /** Each agent holds a desk over each of its stretches: [startedAt, first stop), [each resume, next stop), the last one
  *  up to release. In start order each stretch keeps the agent's desk if it is free
  *  then, as the page's DeskMemory does, else `pick` chooses its [pool, desk in pool] from the pools' release times at
- *  `from`, or null to leave it unseated. The agent's desk is its last stretch's. */
-function intervals(agents: AgentView[], pick: (a: AgentView, from: number, freeAt: number[][]) => [number, number] | null): Map<string, [number, number]> {
+ *  `from` (and each desk's latest owner, who holds it while its release is past `from`), or null to leave it unseated.
+ *  The agent's desk is its last stretch's. */
+function intervals(agents: AgentView[], pick: (a: AgentView, from: number, freeAt: number[][], owner: AgentView[][]) => [number, number] | null): Map<string, [number, number]> {
   // a past stretch ends at its break's start: the server sends where the desk was released, so a board hold after the
   // stop (verifying, stale) is in it
   const freeAt: number[][] = [[], [], []];   // per pool, per desk: the latest release of its owners so far
+  const owner: AgentView[][] = [[], [], []];
   const out = new Map<string, [number, number]>();
   const runs = byStart(agents).flatMap(a => {
     const ends = [...a.breaks.map(([stop]) => stop), release(a)];
@@ -46,10 +49,11 @@ function intervals(agents: AgentView[], pick: (a: AgentView, from: number, freeA
   }).sort((x, y) => x.from - y.from);   // stable: a tie keeps byStart's order
   for (const { a, from, to } of runs) {
     const own = out.get(a.id), free = (d: [number, number]) => (freeAt[d[0]][d[1]] ?? -Infinity) <= from;
-    const at = own && free(own) ? own : pick(a, from, freeAt);
+    const at = own && free(own) ? own : pick(a, from, freeAt, owner);
     if (!at) { out.delete(a.id); continue; }
     const f = freeAt[at[0]];
     f[at[1]] = Math.max(f[at[1]] ?? -Infinity, to);
+    owner[at[0]][at[1]] = a;
     out.set(a.id, at);
   }
   return out;
@@ -73,14 +77,35 @@ export function deskDemand(agents: AgentView[], page?: { mem: DeskMemory; now: n
 const ROOMS: WorkRoom[] = ['main', 'server', 'library'];
 
 /** Room = hash(key) mod 3, then the next rooms: the first desk `free` says yes to, from one the key picks in the room
- *  (hash / 3, so not tied to the room's mod 3) on; [room, desk in room], null when none is free. */
-function pick(a: AgentView, idx: number[][], free: (r: number, i: number) => boolean): [number, number] | null {
-  const h = hash(a.key);
-  for (let j = 0; j < 3; j++) {
-    const r = (h % 3 + j) % 3, n = idx[r].length;
-    for (let k = 0; k < n; k++) { const i = (Math.floor(h / 3) + k) % n; if (free(r, i)) return [r, i]; }
+ *  (hash / 3, so not tied to the room's mod 3) on; [room, desk in room], null when none is free.
+ *  A team's agent with live `mates` (their l.desks indexes, in arrival order) takes the first free
+ *  desk of the block of its first mate in the room most of them are in, else of its first mate in the main office, else
+ *  starts a block there; the first one of a team starts one in the first room of its order with a free 2×2, else in its
+ *  room order. A full main office overflows as above. */
+function pick(a: AgentView, l: Layout, idx: number[][], free: (r: number, i: number) => boolean, mates: number[]): [number, number] | null {
+  const h = hash(a.key), at = (d: number): [number, number] => { const r = ROOMS.indexOf(l.desks[d].room); return [r, idx[r].indexOf(d)]; };
+  const ok = (d: number) => free(...at(d)), rooms = [0, 1, 2].map(j => (h % 3 + j) % 3);
+  const keyed = (r: number) => idx[r].map((_, k) => idx[r][(Math.floor(h / 3) + k) % idx[r].length]);   // from the key's pick on
+  const anchor = (r: number) => {   // the free desk with the most of its block free, ties in key order
+    let best: number | undefined, most = -1;
+    for (const d of keyed(r)) if (ok(d)) { const n = blockFree(l, d, ok); if (n > most) [best, most] = [d, n]; }
+    return best;
+  };
+  const grow = (m: number | undefined) => (m === undefined ? undefined : blockOrder(l, m, h).find(ok));
+  const solo = () => rooms.map(r => keyed(r).find(ok)).find(d => d !== undefined);
+  let d: number | undefined;
+  if (teamOf(a.type) === null) d = solo();
+  else if (!mates.length) {   // first the rooms with a free 2×2 for it, so the team splits less
+    const best = rooms.map(anchor);
+    d = best.find(x => x !== undefined && blockFree(l, x, ok) === 4) ?? best.find(x => x !== undefined);
   }
-  return null;
+  else {
+    const n = (r: WorkRoom) => mates.filter(m => l.desks[m].room === r).length;
+    const r = mates.map(m => l.desks[m].room).reduce((b, x) => (n(x) > n(b) ? x : b));   // ties: the earliest mate's room
+    // its room full: straight to the main office (ROOMS[0]), not the other rooms
+    d = grow(mates.find(m => l.desks[m].room === r)) ?? grow(mates.find(m => l.desks[m].room === 'main')) ?? anchor(0) ?? solo();
+  }
+  return d === undefined ? null : at(d);
 }
 
 /** Per floor, for the page's lifetime: the desk each agent was given (by AgentView.id and .key) and whether it held it
@@ -89,7 +114,8 @@ export interface DeskMemory { grid: string; seats: Map<string, { desk: number; h
 export const deskMemory = (): DeskMemory => ({ grid: '', seats: new Map() });
 
 /** Room = hash(key) mod 3, the desk its key picks among those free in it at startedAt; a full room overflows
- *  to the next one. One that runs again keeps its desk if it is free at the resume, else picks again then (intervals).
+ *  to the next one. A team's agent (teamOf) sits instead in its live mates' block, else starts one
+ *  (pick). One that runs again keeps its desk if it is free at the resume, else picks again then (intervals).
  *  Returns an index into l.desks; an agent no room has space for (l not built for deskDemand) gets none.
  *  With `page` (mem: the page's memory, updated here; now: server time) nobody holding a desk at `now` moves: the
  *  replay re-seats a later agent when one arrives with an earlier startedAt (or the board held a desk the history does
@@ -98,19 +124,31 @@ export const deskMemory = (): DeskMemory => ({ grid: '', seats: new Map() });
  *  the page did. The same snapshot again changes nothing. */
 export function assignDesks(agents: AgentView[], l: Layout, page?: { mem: DeskMemory; now: number }): Map<string, number> {
   const idx = ROOMS.map(r => l.desks.flatMap((d, i) => (d.room === r ? [i] : [])));
-  const m = intervals(agents, (a, from, freeAt) => pick(a, idx, (r, i) => (freeAt[r][i] ?? -Infinity) <= from));
+  const ag = byStart(agents), rank = new Map(ag.map((a, k) => [a.id, k]));
+  const m = intervals(agents, (a, from, freeAt, owner) => {
+    const t = teamOf(a.type);   // live mates: the desks its team holds at `from`, in arrival order
+    const mates = t === null ? [] : owner.flatMap((o, r) => o.flatMap((w, i) => (freeAt[r][i] > from && teamOf(w.type) === t ? [[rank.get(w.id)!, idx[r][i]]] : [])))
+      .sort((x, y) => x[0] - y[0]).map(([, d]) => d);
+    return pick(a, l, idx, (r, i) => (freeAt[r][i] ?? -Infinity) <= from, mates);
+  });
   const base = new Map([...m].map(([id, [r, i]]) => [id, idx[r][i]]));
   if (!page) return base;
   const { mem, now } = page;
   if (mem.grid !== l.key) { mem.grid = l.key; mem.seats.clear(); }   // a new grid seeds everyone at their new place
-  const ag = byStart(agents), out = new Map<string, number>(), taken = new Set<number>(), holds = (a: AgentView) => release(a) > now;
+  const out = new Map<string, number>(), taken = new Set<number>(), holds = (a: AgentView) => release(a) > now;
   // seats go by id and by key: the id holds on while the key changes (keyed by its id until the bind, or a pending call
   // it briefly stands for), the key carries the desk from a pending card to its bound agent
   const seat = (a: AgentView, d: number | undefined) => { if (d !== undefined) { out.set(a.id, d); taken.add(d); } };
   for (const a of ag) { const s = mem.seats.get(a.id); if (holds(a) && s?.held && !taken.has(s.desk)) seat(a, s.desk); }
+  const kept = new Set(out.keys());   // seated by an earlier snapshot
   for (const a of ag) if (holds(a) && !out.has(a.id)) {
-    const at = pick(a, idx, (r, i) => !taken.has(idx[r][i]));
-    seat(a, [mem.seats.get(a.id)?.desk, mem.seats.get(a.key)?.desk, base.get(a.id)].find(d => d !== undefined && !taken.has(d)) ?? (at ? idx[at[0]][at[1]] : undefined));
+    const t = teamOf(a.type), mates = t === null ? [] : ag.flatMap(o => (out.has(o.id) && holds(o) && teamOf(o.type) === t ? [out.get(o.id)!] : []));
+    const at = pick(a, l, idx, (r, i) => !taken.has(idx[r][i]), mates), d = at ? idx[at[0]][at[1]] : undefined;
+    const own = [mem.seats.get(a.id)?.desk, mem.seats.get(a.key)?.desk];
+    // a newcomer joins mates an earlier snapshot seated, which the replay may have seated elsewhere; on a fresh page
+    // (none kept) the replay's desk wins, so a reload seats everyone where the live page did
+    const late = t !== null && own.every(x => x === undefined) && ag.some(o => kept.has(o.id) && teamOf(o.type) === t);
+    seat(a, [...own, ...(late ? [d, base.get(a.id)] : [base.get(a.id), d])].find(x => x !== undefined && !taken.has(x)));
   }
   for (const a of ag) if (!holds(a)) { const d = (mem.seats.get(a.id) ?? mem.seats.get(a.key))?.desk ?? base.get(a.id); if (d !== undefined) out.set(a.id, d); }
   mem.seats = new Map(ag.filter(a => out.has(a.id)).flatMap(a => [a.key, a.id].map(k => [k, { desk: out.get(a.id)!, held: holds(a) }] as const)));

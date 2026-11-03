@@ -2,7 +2,7 @@ import type { AgentView, SessionView, Snapshot } from '../../shared/types.ts';
 import { getLang, setLang, type Lang } from '../../web/src/logic/i18n.ts';
 
 export const agent = (o: Partial<AgentView> = {}): AgentView => ({
-  id: 'a1', parentId: 'main', role: 'agent', type: 'Explore', label: 'job', stage: 'running', reasons: [], alert: false,
+  id: 'a1', parentId: 'main', role: 'agent', type: 'general-purpose', label: 'job', stage: 'running', reasons: [], alert: false,
   badges: [], note: null, activeTools: [], recentTools: [], model: null, tokens: 0, startedAt: 1000, endedAt: null, activeSince: null, breaks: [], stageSince: 1000, leaveAt: null, ...o,
   key: o.key ?? o.id ?? 'a1',
 });

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cafeSide, doneAisle, doneSeats, officeLayout, queueSpot, sofaSeats, waitAisle, waitSpots, type Fit } from '../../web/src/logic/layout.ts';
 import { hash } from '../../web/src/logic/model.ts';
+import { blockOrder, deskCells } from '../../web/src/logic/team.ts';
 import { assignDesks, atWork, BURN_HOLD_MS, deskDemand, deskMemory, doneMemory, doneSeating, FAIL_RELEASE_MS, hitAt, keepFloors, officeScene, rememberDone, themeOf, THEMES } from '../../web/src/logic/scene.ts';
 import type { AgentView } from '../../shared/types.ts';
 import { agent } from './fake.ts';
@@ -115,10 +116,10 @@ test('officeScene: a pending agent keeps its body sprite when it binds to its ag
   assert.equal(sprite(agent({ id: A, key: T })), sprite(agent({ id: 'pending:' + T, key: T, stage: 'spawning' })));
 });
 // the page's view: each snapshot through one DeskMemory, the desk of every agent drawn at one (release later than t)
-const watch = () => {
+const watch = (l = MIN) => {
   const mem = deskMemory();
   return (ag: AgentView[], t: number) => {
-    const { places } = officeScene(ag, t, MIN, [], mem);
+    const { places } = officeScene(ag, t, l, [], mem);
     return new Map([...places].filter(([, p]) => p.kind === 'desk').map(([id, p]) => [id, p.desk]));
   };
 };
@@ -155,6 +156,134 @@ test('assignDesks: a reload replays every stretch (breaks), so it seats everyone
   steps.forEach(([ag, t], k) => {
     const reload = assignDesks(ag, MIN);
     assert.deepEqual(sorted(new Map([...live[k]].map(([id]) => [id, reload.get(id) ?? null]))), sorted(live[k]), `reload at ${t}`);
+  });
+});
+// team seating
+const L52 = officeLayout(fit(1700, 901, { sb: 15, frame: true }));   // the 1920 window's 52×27: main office 3×4, Server room 2×3, Library 1×3
+const tm = (id: string, startedAt: number, o: Partial<AgentView> = {}) => agent({ id, type: 'marketing:seo', startedAt, stageSince: startedAt, ...o });
+const gp = (id: string, startedAt: number, o: Partial<AgentView> = {}) => agent({ id, type: 'general-purpose', startedAt, stageSince: startedAt, ...o });
+const keyIn = (room: string, prefix: string, skip = 0) => Array.from({ length: 200 }, (_, i) => `${prefix}${i}`).filter(k => ROOMS[hash(k) % 3] === room)[skip];
+const keyAt = (desk: number, others: AgentView[], startedAt: number) =>   // a general-purpose key whose pick is `desk`
+  Array.from({ length: 2000 }, (_, i) => `g${i}`).find(k => assignDesks([...others, gp(k, startedAt)], L52).get(k) === desk)!;
+const occupy = (desks: number[]) => desks.reduce<AgentView[]>((ag, d, k) => [...ag, gp(keyAt(d, ag, k + 1), k + 1)], []);   // general-purpose agents on these desks
+// one room, two neighbouring rows and two neighbouring columns, one desk each
+const square = (l: typeof MIN, ds: number[]) => {
+  const c = deskCells(l), span = (k: 'row' | 'col') => { const v = [...new Set(ds.map(d => c[d][k]))].sort((a, b) => a - b); return v.length === 2 && v[1] - v[0] === 1; };
+  return new Set(ds).size === 4 && new Set(ds.map(d => l.desks[d].room)).size === 1 && span('row') && span('col');
+};
+const near = (l: typeof MIN, ds: number[]) => {   // all within one 2×2 of one room
+  const c = deskCells(l), span = (k: 'row' | 'col') => Math.max(...ds.map(d => c[d][k])) - Math.min(...ds.map(d => c[d][k]));
+  return new Set(ds.map(d => l.desks[d].room)).size === 1 && span('row') <= 1 && span('col') <= 1;
+};
+test('assignDesks: team-less agents sit where they did before teams while no team is in', () => {
+  const t = (i: number) => (i % 2 ? 'claude' : 'general-purpose'), seat = (m: Map<string, number>) => Object.fromEntries(m);
+  // the desks the code gave before team seating (the first three assignDesks tests' agents)
+  assert.deepEqual(seat(assignDesks(['a-hot', 'a-hook', 'a-lint', 'a-config', 'a-engine'].map((id, i) => agent({ id, type: t(i), startedAt: i + 1 })), MIN)),
+    { 'a-hot': 8, 'a-hook': 9, 'a-lint': 0, 'a-config': 6, 'a-engine': 5 });
+  assert.deepEqual(seat(assignDesks(['r', 'g', 'n', 'x', 'm1', 'c', 'e', 'a', 'b'].map((id, i) => agent({ id, type: t(i), startedAt: i * 10 })), MIN)),
+    { r: 5, g: 0, n: 3, x: 4, m1: 1, c: 8, e: 9, a: 7, b: 6 });
+  assert.deepEqual(seat(assignDesks(['r', 'g', 'n'].map((id, i) => agent({ id, type: t(i), startedAt: i })), BIG)), { r: 11, g: 6, n: 3 });
+});
+test('assignDesks: four marketing:* arriving at once sit in one room as a 2×2 square', () => {
+  for (const room of ['main', 'server']) {   // the first one's room (the Library has one row)
+    const types = ['marketing:copywriter', 'marketing:seo', 'marketing:social', 'marketing:analytics'];
+    const ag = [keyIn(room, 'a-'), 'z1', 'z2', 'z3'].map((id, i) => agent({ id, type: types[i], startedAt: 100 })), m = assignDesks(ag, L52);
+    const ds = ag.map(a => m.get(a.id)!);
+    assert.ok(square(L52, ds), `${room}: ${ds}`);
+    assert.equal(L52.desks[ds[0]].room, room);
+  }
+});
+test('assignDesks: a team whose room is full gathers in a block in the main office', () => {
+  // the Server room's right column held leaves it one free 2×2 (desks 12, 13, 15, 16), which the first four fill
+  const first = keyIn('server', 'a-'), ag = [...occupy([14, 17]), ...[first, 't2', 't3', 't4', 't5', 't6', 't7'].map((id, k) => tm(id, 10 + k))];
+  const m = assignDesks(ag, L52), rest = ['t5', 't6', 't7'].map(id => m.get(id)!);
+  assert.deepEqual([first, 't2', 't3', 't4'].map(id => m.get(id)!).sort((a, b) => a - b), [12, 13, 15, 16]);
+  assert.deepEqual(rest.map(d => L52.desks[d].room), ['main', 'main', 'main']);
+  assert.ok(near(L52, rest), `${rest}`);
+});
+test('assignDesks: a taken desk in the block is skipped, the team stays together', () => {
+  const first = keyIn('main', 'a-'), A = assignDesks([tm(first, 0)], L52).get(first)!, bo = blockOrder(L52, A, 0);
+  const g = keyAt(bo[1], [tm(first, 0)], 1);
+  const m = assignDesks([tm(first, 0), gp(g, 1), tm('t2', 2), tm('t3', 3), tm('t4', 4)], L52);
+  assert.equal(m.get(g), bo[1]);
+  assert.deepEqual([first, 't2', 't3', 't4'].map(id => m.get(id)), [bo[0], bo[2], bo[3], bo[4]]);
+});
+// L52 main rows 0–2 × cols 0–3 (desks 0–11), Server room rows 0–1 × cols 0–2 (12–17): its middle row / column held kills every free 2×2
+test('assignDesks: a team\'s first member skips its room without a free 2×2 for the next room in its order with one', () => {
+  const ag = [...occupy([4, 5, 6, 7]), ...[keyIn('main', 'a-'), 't2', 't3', 't4'].map(id => tm(id, 10))], m = assignDesks(ag, L52);
+  const ds = ag.slice(4).map(a => m.get(a.id)!);
+  assert.equal(L52.desks[ds[0]].room, 'server');
+  assert.ok(square(L52, ds), `${ds}`);
+});
+test('assignDesks: with no free 2×2 anywhere a team\'s first member sits as before', () => {
+  const first = keyIn('main', 'a-'), ag = [...occupy([4, 5, 6, 7, 13, 16]), tm(first, 10)];
+  assert.equal(assignDesks(ag, L52).get(first), 8);   // the desk the code gave before the 2×2 preference
+});
+test('assignDesks (page): a new team member arriving moves nobody seated, even one starting earlier', () => {
+  const mem = deskMemory(), see = (ag: AgentView[], now: number) => assignDesks(ag, L52, { mem, now });
+  const steps = [[tm('t1', 10), tm('t2', 11)], [tm('t0', 5)], [gp('g1', 1)]], ag: AgentView[] = [], seen = new Map<string, number>();
+  steps.forEach((more, k) => {
+    ag.push(...more);
+    const m = see([...ag], 100 + k);
+    for (const [id, d] of seen) assert.equal(m.get(id), d, `${id} moves at step ${k}`);
+    for (const [id, d] of m) seen.set(id, d);
+  });
+  assert.equal(new Set(seen.values()).size, 4);
+  assert.deepEqual(['t0', 't2'].map(id => L52.desks[seen.get(id)!].room), [L52.desks[seen.get('t1')!].room, L52.desks[seen.get('t1')!].room]);
+});
+test('assignDesks (page): a late team member with an earlier startedAt joins its seated mates\' block, not the replay\'s', () => {
+  const mem = deskMemory(), see = (ag: AgentView[], now: number) => assignDesks(ag, L52, { mem, now }), mates = [tm('t1', 10), tm('t2', 11)];
+  const first = see(mates, 100), m = see([...mates, tm('t0', 5)], 101), held = new Set(first.values());
+  assert.notEqual(L52.desks[assignDesks([...mates, tm('t0', 5)], L52).get('t0')!].room, L52.desks[first.get('t1')!].room, 'the replay seats the team elsewhere');
+  assert.equal(m.get('t0'), blockOrder(L52, first.get('t1')!, hash('t0')).find(d => !held.has(d)));
+  assert.ok(near(L52, [m.get('t0')!, first.get('t1')!]));
+});
+test('assignDesks (page): a fresh page seats a team where the replay does, though a desk its block skipped is free now', () => {
+  // g held the block's second desk when t2 came and has left since: a reload keeps t2 past it, as the live page did
+  const A = assignDesks([tm('t1', 0)], L52).get('t1')!, bo = blockOrder(L52, A, 0), g = keyAt(bo[1], [tm('t1', 0)], 1);
+  const ag = [tm('t1', 0), gp(g, 1, { stage: 'done', stageSince: 20 }), tm('t2', 10)];
+  assert.equal(assignDesks(ag, L52).get('t2'), bo[2]);
+  assert.deepEqual(assignDesks(ag, L52, { mem: deskMemory(), now: 30 }), assignDesks(ag, L52));
+});
+test('assignDesks (page): one whose type turns from unknown to marketing:seo at its bind keeps its desk', () => {
+  const mem = deskMemory(), see = (ag: AgentView[], now: number) => assignDesks(ag, L52, { mem, now }), mates = [tm('t1', 0), tm('t2', 1)];
+  const before = see([...mates, agent({ id: 'x', type: 'unknown', startedAt: 2, stageSince: 2 })], 10);
+  const after = see([...mates, tm('x', 2)], 11);
+  assert.deepEqual(after, before);
+  assert.notEqual(assignDesks([...mates, tm('x', 2)], L52).get('x'), before.get('x'), 'a reload seats it with its team');
+});
+test('assignDesks: a team agent running again whose desk was taken sits in its live mates\' block', () => {
+  // t1 sits alone, t2 and t3 join its block; t1 stops at 100 and g takes its desk; t1 runs again at 300
+  const t1 = (o: Partial<AgentView>) => tm('t1', 0, o), mates = [tm('t2', 10), tm('t3', 11)];
+  const A = assignDesks([t1({}), ...mates], L52).get('t1')!, g = keyAt(A, [t1({ stage: 'done', stageSince: 100 }), ...mates], 200);
+  const m = assignDesks([t1({ stageSince: 300, breaks: [[100, 300]] }), ...mates, gp(g, 200)], L52);
+  assert.equal(m.get(g), A);
+  const held = new Set([m.get('t2'), m.get('t3'), A]);
+  assert.equal(m.get('t1'), blockOrder(L52, m.get('t2')!, hash('t1')).find(d => !held.has(d)));
+  assert.ok(near(L52, [m.get('t1')!, m.get('t2')!]));
+});
+test('assignDesks (page): the same snapshot again changes nothing; on a new grid (a zoom step) the team is together again', () => {
+  const ag = [keyIn('main', 'a-'), 'z1', 'z2', 'z3'].map(id => tm(id, 100)), mem = deskMemory();
+  const a = assignDesks(ag, L52, { mem, now: 200 });
+  assert.deepEqual(assignDesks(ag, L52, { mem, now: 200 }), a);
+  assert.ok(square(L52, ag.map(x => a.get(x.id)!)));
+  const b = assignDesks(ag, MIN, { mem, now: 300 });
+  assert.ok(square(MIN, ag.map(x => b.get(x.id)!)), `${[...b.values()]}`);
+  assert.deepEqual(b, assignDesks(ag, MIN));
+});
+test('assignDesks: with teams too a reload seats everyone where the live page did', () => {
+  const t1 = (o: Partial<AgentView>) => tm('t1', 0, o), t2 = tm('t2', 1), g = gp('g', 2), t3 = tm('t3', 200), t4 = agent({ id: 't4', type: 'marketing:social', startedAt: 500, stageSince: 500 });
+  const t1r = t1({ stageSince: 300, breaks: [[100, 300]] }), t2Done = { ...t2, stage: 'done' as const, stageSince: 400, endedAt: 400 };
+  const steps: [AgentView[], number][] = [
+    [[t1({}), t2, g], 5],
+    [[t1({ stage: 'done', stageSince: 100, endedAt: 100 }), t2, g, t3], 200],
+    [[t1r, t2, g, t3], 300],
+    [[t1r, t2Done, g, t3, t4], 500],
+  ];
+  const see = watch(L52), sorted = (m: Map<string, number | null>) => Object.fromEntries([...m].sort());
+  steps.forEach(([ag, t]) => {
+    const live = see(ag, t), reload = assignDesks(ag, L52);
+    assert.deepEqual(sorted(new Map([...live].map(([id]) => [id, reload.get(id) ?? null]))), sorted(live), `reload at ${t}`);
   });
 });
 test('officeScene: agents arriving one by one in any startedAt order never move a seated one', () => {
