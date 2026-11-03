@@ -34,7 +34,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 ## What you see
 
 - **One floor per session.** Every Claude Code session on the machine gets its own floor, listed in the left sidebar (highest floor number on top) with running / waiting / done counters. Floor numbers (`F1`, `F2`, …) follow session age with no gaps: when a floor goes, the ones above it move down one; a floor's office colour stays with the session.
-- **Sub-agents as pixel characters.** Each sub-agent walks to a desk in one of three work rooms (main office, server room, library) and keeps it until it is done. Its job and current tool show under its name (`▸ Bash npm test`).
+- **Sub-agents as pixel characters.** Each sub-agent walks to a desk in one of three work rooms (main office, server room, library) and keeps it until it is done. Its job and current tool show under its name (`▸ Bash npm test`). Sub-agents of the same type (for example `marketing:*`) sit together, while general-purpose ones spread out at random.
 - **Five rooms and a corridor.** Main office, server room, library, waiting room and the Done lounge, each with its own door, sign and theme.
 - **Waiting is impossible to miss.** Permission requests, questions and foreman decisions put the agent in the waiting room with a balloon: a bell or siren when you have to act, a question mark when the foreman will handle it.
 - **Three views of the same data.** Pixel office, Hybrid (the main agent in the middle, stage cards orbiting around it) and Kanban (Queued · Running · Waiting on you · Verifying · Done/Failed, one lane per session).
@@ -132,7 +132,7 @@ The simulator plays scripted sessions into a throwaway sandbox, so you can look 
 
 ```bash
 node src/cli.ts simulate --scenario pixel --port 4787
-# other scenarios: --scenario hybrid | done | fire | ask      speed: --speed 2
+# other scenarios: --scenario hybrid | done | fire | ask | team      speed: --speed 2
 ```
 
 - `pixel`: floors arrive over time; agents work, wait for a permission or an answer, finish and fail.
@@ -140,6 +140,7 @@ node src/cli.ts simulate --scenario pixel --port 4787
 - `done`: one foreman floor of twelve agents that finish one after another and fill the Done lounge.
 - `fire`: five sub-agents pass 30 minutes of work and the server room catches fire; the fire brigade puts it out.
 - `ask`: a foreman floor's main agent asks two questions and waits; answer them from its pop-up. On two other floors the questions are answered in the terminal.
+- `team`: one foreman floor of marketing, caveman, Explore and general-purpose sub-agents; each team sits together, the general-purpose ones spread out.
 
 Every image on this page was recorded from the simulator.
 
@@ -166,7 +167,7 @@ This removes only foreman-vision's own hook entries from `settings.json`, after 
 | Command | What it does |
 |---|---|
 | `node src/cli.ts serve [--port N]` | Serves the UI and the live event stream on `127.0.0.1` (default port 4780). |
-| `node src/cli.ts simulate [--scenario pixel\|hybrid\|done\|fire\|ask] [--speed X] [--port N]` | Runs a scripted demo in a temporary sandbox. |
+| `node src/cli.ts simulate [--scenario pixel\|hybrid\|done\|fire\|ask\|team] [--speed X] [--port N]` | Runs a scripted demo in a temporary sandbox. |
 | `node src/cli.ts simulate [x.jsonl ...] [--copies N] [--speed X] [--port N]` | Replays recorded hook sessions in a temporary sandbox, one floor per file and copy; with no file it replays `test/fixtures/*.jsonl`. |
 | `node src/cli.ts install` | Merges the hooks into Claude Code's `settings.json`. Idempotent; writes a `settings.json.fv-backup-<time>` first and stops without writing if the file is not valid JSON. |
 | `node src/cli.ts uninstall` | Removes only foreman-vision's hook entries. |
