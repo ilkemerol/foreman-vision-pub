@@ -37,7 +37,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
 - **Sub-agents as pixel characters.** Each sub-agent walks to a desk in one of three work rooms (main office, server room, library) and keeps it until it is done. Its job and current tool show under its name (`▸ Bash npm test`). Sub-agents of the same type (for example `marketing:*`) sit together, while general-purpose ones spread out at random.
 - **Five rooms and a corridor.** Main office, server room, library, waiting room and the Done lounge, each with its own door, sign and theme.
 - **Waiting is impossible to miss.** Permission requests, questions and foreman decisions put the agent in the waiting room with a balloon: a bell or siren when you have to act, a question mark when the foreman will handle it.
-- **Three views of the same data.** Pixel office, Hybrid (the main agent in the middle, stage cards orbiting around it) and Kanban (Queued · Running · Waiting on you · Verifying · Done/Failed, one lane per session).
+- **Three views of the same data.** Pixel office, Hybrid (the main agent in the middle, stage cards orbiting around it) and Kanban (Queued · Running · Waiting on you · Verifying · Done/Failed, one floor at a time).
 - **Two office styles.** Flat top-down or true isometric pixel art. Switching styles never makes anyone walk again.
 - **Isometric zoom.** `−` / `+` / Reset next to the floor title work like your browser's Ctrl− / Ctrl+ on the isometric office alone: each step (1× to 3×) lays the office out anew at that pixel size, so it fills its area with fewer, bigger tiles on `+` and more, smaller ones on `−` (agents may change desks). Past the smallest office the steps magnify it and it scrolls. Your last zoom is remembered across reloads. With no zoom stored the isometric office fills its area (on a 1920×1080 screen 1.25×); Reset returns there. Flat ignores the zoom.
 - **The Done lounge.** Finished agents stay for at most ten minutes, then burn to ash and leave the smart board (the CLI board keeps the real counts). Agents sitting opposite each other at a café table chat in little clouds; at night the smart board glows, throwing a V of light on the floor and flickering now and then.
@@ -62,7 +62,7 @@ It runs in your browser on `127.0.0.1`, reads only what Claude Code already writ
   </tr>
   <tr>
     <td><img src="docs/media/hybrid.png" alt="Hybrid view: stage cards around the main agent"></td>
-    <td><img src="docs/media/kanban.png" alt="Kanban view: one lane per session"></td>
+    <td><img src="docs/media/kanban.png" alt="Kanban view: one floor's stage columns"></td>
   </tr>
   <tr>
     <td align="center"><sub>Hybrid view</sub></td>

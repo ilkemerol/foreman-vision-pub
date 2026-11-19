@@ -161,13 +161,18 @@ button { font: inherit; color: inherit; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(255 140 26 / .75); } 70% { box-shadow: 0 0 0 9px rgb(255 140 26 / 0); } 100% { box-shadow: 0 0 0 0 rgb(255 140 26 / 0); } }
 @keyframes pop { 0% { transform: scale(.85); opacity: 0; } 60% { transform: scale(1.04); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
 
-.kanban { display: grid; gap: 6px; }
-.krow { display: grid; grid-template-columns: 170px repeat(5, minmax(150px, 1fr)); gap: 6px; }
-.krow.ended { opacity: .5; }
-.krow.alerting .klane { color: var(--wait); }
+/* one floor's columns, full width and height of the pane (top-aligned, scrolls when taller) */
+.slide > .pane > .kanban { flex: 1; align-self: flex-start; min-height: 100%; margin: 0; }
+.kanban { display: grid; grid-template-rows: auto 1fr; gap: 6px; }
+.kanban.ended { opacity: .5; }
+.krow { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 6px; }
 .khead .kcol { font-weight: 600; color: var(--dim); background: none; min-height: 0; }
 .kcol { min-height: 40px; padding: 4px; border-radius: 6px; background: rgb(255 255 255 / .02); }
-.klane { padding: 4px; }
+/* the tool's own bottom row (AgentChip slot); a new command or the faint placeholder fades in */
+.kanban .chip .tool { min-height: 17px; margin-top: 2px; padding-top: 2px; border-top: 1px solid var(--line); }
+.kanban .chip .tool > span { animation: fade .4s ease; }
+.kanban .chip .tool.none { font-style: italic; opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .kanban .chip .tool > span { animation: none; } }
 
 /* one floor at a time: panes slide like an elevator (FloorSlide) */
 .fit, .slide { position: relative; height: 100%; }

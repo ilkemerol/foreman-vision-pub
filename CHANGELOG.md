@@ -3,6 +3,14 @@
 All notable changes to foreman-vision. The plugin has no version number, so entries are dated.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2026-11-19
+
+### Changed
+
+- **Kanban shows one floor at a time.** It used to draw every session as a lane; now it shows the floor picked in the sidebar, and a floor change rides the elevator like the other views.
+- **A fixed tool row on Kanban cards.** Each card keeps a bottom row for its current tool. Between tools it reads a faint "no command running", so the card no longer changes height, and each new text fades in.
+- The version in `package.json` is now 0.2.0; the About pop-up shows it.
+
 ## 2026-11-03
 
 ### Added
